@@ -149,3 +149,44 @@
 - 並行：3DGS spike（本機 GPU 跑單圖→splat + 前端試渲染，驗品質/延遲/可行性）→ 通過再規劃正式換代
 - 3DGS 前端渲染器候選：@mkkellogg/gaussian-splats-3d 或 Three.js splat 方案
 - 玻璃/半透明屬本質限制，即使 3DGS 亦有極限，不過度承諾
+
+# Phase Checkpoint
+- Project: 3D-Photo-Synthesis-Engine
+- Phase: Phase 4 軌道一 C1 落地 + 前端 viewer/UX 修正
+- Status: completed（C1 已 merge 進 main；前端修正在 PR #3 待 merge）
+- Date: 2026-06-28
+
+## Goals
+- 落地軌道一 C1：DIBR depth-aware 補繪取代 Telea 當 Orchestrator primary
+- 修實機回報的前端問題：視差拖曳手感、mesh 模式空白/切換不清、測試範例圖、mesh 攝影機（浮雕/遠看物件/歪）
+
+## Decisions
+- **C1 演算法**：`DepthAwareInpainter` = depth-gated 迭代背景擴散（純 NumPy/OpenCV、零 GPU、無狀態）——估背景深度門檻→切背景種子（排前景）→逐圈往洞內擴散 color/depth→殘餘交 Telea 收尾→depth 裁回原值域防尖刺。沿用 AbstractInpainter 契約，注入 /synthesize primary、Telea 留 fallback
+- **mesh 攝影機三連修**（與視差模式手感對齊 = FB 3D Photo「鏡頭在場景內」感）：
+  - 拖曳驅動（取代 hover）：dragScale=3.5、拖曳中無阻尼跟手、放開 damping=0.18 回正
+  - 解「浮雕/遠看 3D 物件」：mesh 是近窄遠寬透視視錐，舊版用整體 bbox 寬高（=遠平面尺寸）定框距把相機推到視錐外。改貼到正面（max.z）、框距用正面內容尺度（bbox 高 ×0.4）→ 後牆填滿溢出視野、box 輪廓落框外
+  - 解「攝影機歪」：原相機光軸 = 反投影空間 X=0,Y=0 線（影像中心 cx,cy 映到 X=Y=0）。先前對準 bbox 質心、被遠平面拉偏 → 斜射。改相機站位與 lookAt 都落在 X=0,Y=0、正對 −Z
+- **新增 mesh 可選「自由旋轉視角」**（OrbitControls）：預設 FB 視差，勾選才自由轉動看真 3D 結構（會露側面破洞，進階）
+- **業界（FB）做法釐清**：FB 網頁版根本不看 mesh，就是「視差模式」那種平面+depth UV 位移（天生正、無 box 邊界）；縱深與空洞靠 **LDI 多層 RGBA+depth（各層不同速位移、前景移開露背景層）+ 學習式 inpainting 補真空洞**（CVPR2020）。即我們的軌道二方向
+- **空洞確認**：未加 LDI/3DGS 模型前，mesh 大角度露出「原圖沒拍到的被遮擋區」= 空洞，屬單層 2.5D 本質限制、正常現象；C1 只能讓斷崖接縫不滲前景，補不了大洞
+
+## Changes
+- `src/core/inpainting.py`: 新增 `DepthAwareInpainter(AbstractInpainter)`；模組 docstring 註明現行主修補器
+- `backend/app.py`: /synthesize primary 由 Telea 改 `DepthAwareInpainter()`，Telea 留 fallback
+- `tests/unit/test_inpainting_depth_aware.py`: 新增 16 測（fast path/契約/DIBR 只取背景/退化/與 Telea 對照）
+- `frontend/src/parallax.ts`: dragScale 2.2→3.5、拖曳中無阻尼跟手、`setVisible()`
+- `frontend/src/viewer.ts`: 拖曳驅動、相機貼正面+光軸對準（X=0,Y=0）、panAmount/tiltOffset 加大、`setVisible()`/`clear()`/`setOrbitMode()`/cameraZ、OrbitControls
+- `frontend/src/main.ts`: applyViewerVisibility()/resetViewport()、模式切換清空、範例圖一鍵載入、orbit toggle 綁定
+- `frontend/src/style.css`: canvas 改 position:absolute 重疊（解 mesh 空白）、empty-state z-index、.secondary 按鈕
+- `frontend/index.html`: 「載入測試範例圖」按鈕、mesh-only「自由旋轉視角」checkbox
+- `frontend/public/samples/`: 內建 RGB_TEST.jpg + DEPTH_TEST.png
+
+## Verification
+- pytest 83 passed（原 67 + 新 16）；frontend `npm run build` 綠（tsc + Vite）
+- 使用者實機：C1 待驗；mesh 拖曳手感一致✅、自由旋轉模式✅切換正確✅；mesh 正視角仍偏「遠看物件」與「歪」→ 本回合續修（光軸對準 + 貼正面），待再驗
+
+## Open Questions / TODO
+- **PR 狀態**：PR #1（Phase1-3）✅merged、PR #2（C1）✅merged 進 main；**PR #3（前端 viewer/UX）OPEN 待 merge**（4 commits：UX 修正 / mesh 手感 / 貼正面框距 / 光軸對準）
+- mesh 正視角係數（框高 ×0.4）依 near:far≈1:4 估算，實機若仍偏遠調小（0.3）、太貼調大——待使用者定案
+- **空洞根治 = 軌道二**（LDI 多層補繪 或 3DGS）；下一步可起 3DGS spike（本機 GPU）
+- depth_far 預設 4.0（前端 parallax 滑桿），若縱深不足可調大
