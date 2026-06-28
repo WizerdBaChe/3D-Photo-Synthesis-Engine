@@ -7,7 +7,9 @@
 - 所有修補策略必須繼承 AbstractInpainter（BR-001）。
 - fill() 必須同時修補 color 與 depth 矩陣（DD-007）。
 - 模組為無狀態物件，不存留影像或網格狀態（DD-001）。
-- LaMaInpainter 為 MVP 架構佔位符，整合時參照 PSM Phase 4 規範。
+- DepthAwareInpainter（Phase 4 C1）為現行主修補器：DIBR 原則「只取背景、排前景」，
+  純 CPU、零 GPU 依賴；TeleaInpainter 續留作降級 fallback 與其殘餘收尾。
+- LaMaInpainter 為 AI 路線架構佔位符，整合時參照 PSM Phase 4 規範。
 """
 
 from __future__ import annotations
@@ -130,6 +132,142 @@ class TeleaInpainter(AbstractInpainter):
             depth=repaired_depth.astype(np.float32),
             mask=None
         )
+
+
+# ---------------------------------------------------------------------------
+# Depth-aware 修補器（Phase 4 — C1：DIBR 只取背景、排除前景）
+# ---------------------------------------------------------------------------
+
+class DepthAwareInpainter(AbstractInpainter):
+    """
+    Depth-aware（DIBR 原則）CPU 修補器 — Phase 4 軌道一 C1 的主修補策略。
+
+    解決的問題（與純 Telea 的差異）
+    --------------------------------
+    斷崖破洞發生在「前景物件」與「其背後背景」的交界。視角移動時露出的，
+    在物理上**屬於背景**（前景擋住的是背景，不是反過來）。但 Telea 的
+    Fast-Marching 不分前後景，會把破洞邊界**兩側**的色彩一起往內擴散，
+    使前景色滲入洞中（房間圖「床上冒出右側櫃子木色」、花瓶窗景物件撥離）。
+
+    DIBR（Depth-Image-Based Rendering）的關鍵修正：補洞時**只取背景側**
+    （depth 較大 = 較遠）的鄰域像素，用 depth 把前景鄰居排除在外。
+
+    演算法（depth-gated 背景擴散，純 NumPy/OpenCV、零 GPU、無狀態）
+    --------------------------------------------------------------
+      1. 由破洞外緣一圈的有效像素，估出「背景深度門檻」：取邊界鄰域深度的
+         high 分位數（bg_percentile，預設 50）為界 —— 比它更近的視為前景，
+         不得參與填補。
+      2. 以該門檻把有效像素切成「背景種子（可借用）」與「前景（禁用）」。
+      3. 對破洞做**迭代式背景擴散**：每一輪僅允許背景已知像素把 color/depth
+         往尚未填補的破洞像素傳遞（3×3 鄰域均值），逐圈往洞內收斂，直到填滿
+         或達到 max_iter。前景像素全程不參與 → 從機制上杜絕前景滲入。
+      4. 仍有殘餘未填（背景種子不足）→ 對殘餘區以 Telea 收尾，確保無破洞殘留。
+      5. depth 比照 TeleaInpainter 裁回原始有效值域，避免外插尖刺。
+
+    與既有架構的相容性
+    ------------------
+      - 完全沿用 AbstractInpainter.fill 契約（fast path、輸出新 frame、
+        mask 清為 None、color uint8 / depth float32）。
+      - 純 CPU、不引入任何重依賴；可直接注入 Orchestrator 的 primary，
+        Telea 留作 fallback。OOM 降級鏈不受影響（本類別不會拋 VRAMExhaustedError）。
+
+    Args:
+        bg_percentile:  背景深度門檻分位數（0~100）。越高 → 越嚴格只取最遠像素，
+                        前景排除越乾淨，但可借用的種子越少。預設 50（中位數）。
+        max_iter:       背景擴散最大輪數（每輪約往洞內推進一圈像素）。預設 64，
+                        足以填滿斷崖破洞這類細長區域；達上限的殘餘交給 Telea。
+        telea_radius:   收尾 Telea 修補半徑。
+    """
+
+    def __init__(
+        self,
+        bg_percentile: float = 50.0,
+        max_iter: int = 64,
+        telea_radius: int = 3,
+    ):
+        self.bg_percentile = float(bg_percentile)
+        self.max_iter      = int(max_iter)
+        self.telea_radius  = int(telea_radius)
+        self._fallback     = TeleaInpainter(inpaint_radius=telea_radius)
+
+    def fill(self, frame: RGBDFrame) -> RGBDFrame:
+        # 快速路徑：無遮罩或全 False，直接原樣回傳（契約一致）
+        if frame.mask is None or not np.any(frame.mask):
+            return frame
+
+        hole = frame.mask.astype(bool)
+        valid = ~hole
+        depth_f32 = frame.depth.astype(np.float32)
+
+        # 全圖皆為破洞的退化情況：無任何有效像素可借 → 交給 Telea（其內部處理）
+        if not np.any(valid):
+            return self._fallback.fill(frame)
+
+        # --- 1. 估背景深度門檻：取「破洞外緣一圈」有效像素深度的高分位數 ---
+        #     只看緊鄰破洞的邊界像素，門檻才反映「這個洞背後的背景」而非全圖。
+        kernel = np.ones((3, 3), np.uint8)
+        hole_u8 = hole.astype(np.uint8)
+        dilated = cv2.dilate(hole_u8, kernel, iterations=1).astype(bool)
+        border = dilated & valid                      # 緊貼破洞的有效像素環
+        sample = depth_f32[border] if np.any(border) else depth_f32[valid]
+        bg_threshold = float(np.percentile(sample, self.bg_percentile))
+
+        # --- 2. 背景種子：有效且 depth >= 門檻（較遠）。前景（較近）排除 ---
+        background_seed = valid & (depth_f32 >= bg_threshold)
+        if not np.any(background_seed):
+            # 邊界全是前景（無背景可借）→ 放寬為「全部有效像素」當種子，
+            # 仍走擴散（至少不會比 Telea 差，且維持單一程式路徑）。
+            background_seed = valid
+
+        # --- 3. depth-gated 迭代背景擴散 ---
+        color = frame.color.astype(np.float32)
+        depth = depth_f32.copy()
+        known = background_seed.copy()                # 目前可作為來源的「已知背景」
+        remaining = hole.copy()                       # 尚未填補的破洞
+
+        for _ in range(self.max_iter):
+            if not np.any(remaining):
+                break
+            known_u8 = known.astype(np.uint8)
+            # 已知區往外擴一圈，與「尚未填的破洞」交集 = 本輪可填的前緣
+            grown = cv2.dilate(known_u8, kernel, iterations=1).astype(bool)
+            frontier = grown & remaining
+            if not np.any(frontier):
+                break  # 背景擴散到此為止（種子被前景包圍而無法再前進）
+
+            # 前緣每個像素 = 其 3×3 鄰域內「已知像素」的均值（color + depth）
+            cnt = cv2.filter2D(known_u8.astype(np.float32), -1, kernel.astype(np.float32))
+            cnt_safe = np.where(cnt > 0, cnt, 1.0)
+            for c in range(color.shape[2]):
+                src = np.where(known, color[..., c], 0.0)
+                acc = cv2.filter2D(src, -1, kernel.astype(np.float32))
+                color[frontier, c] = (acc / cnt_safe)[frontier]
+            d_src = np.where(known, depth, 0.0)
+            d_acc = cv2.filter2D(d_src, -1, kernel.astype(np.float32))
+            depth[frontier] = (d_acc / cnt_safe)[frontier]
+
+            known[frontier] = True
+            remaining[frontier] = False
+
+        # --- 4. 殘餘（背景種子不足以填滿）交給 Telea 收尾，保證無破洞殘留 ---
+        repaired_color = np.clip(color, 0, 255).astype(np.uint8)
+        repaired_depth = depth.astype(np.float32)
+        if np.any(remaining):
+            leftover = RGBDFrame(
+                color=repaired_color,
+                depth=repaired_depth,
+                mask=remaining,
+            )
+            patched = self._fallback.fill(leftover)
+            repaired_color = patched.color
+            repaired_depth = patched.depth.astype(np.float32)
+
+        # --- 5. 防尖刺：depth 裁回原始有效值域（與 TeleaInpainter 一致）---
+        lo = float(depth_f32[valid].min())
+        hi = float(depth_f32[valid].max())
+        repaired_depth = np.clip(repaired_depth, lo, hi).astype(np.float32)
+
+        return RGBDFrame(color=repaired_color, depth=repaired_depth, mask=None)
 
 
 # ---------------------------------------------------------------------------
