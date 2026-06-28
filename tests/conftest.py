@@ -81,13 +81,24 @@ def default_intrinsics() -> CameraIntrinsics:
     """
     10×10 圖片的預設相機內參（光心居中，焦距 500px）。
     用於幾何處理器的單元測試。
+
+    C-3 註：單元測試刻意使用「恆等深度映射」(depth_near=0, depth_far=1)，
+    使 Z = d，隔離並驗證反投影『公式本身』的正確性；
+    生產預設的 near/far 視差尺度由 contracts.py 的預設值與整合層負責。
     """
-    return CameraIntrinsics(fx=500.0, fy=500.0, cx=5.0, cy=5.0, width=10, height=10)
+    return CameraIntrinsics(
+        fx=500.0, fy=500.0, cx=5.0, cy=5.0, width=10, height=10,
+        depth_near=0.0, depth_far=1.0,
+    )
 
 
 @pytest.fixture
 def identity_intrinsics() -> CameraIntrinsics:
     """
     fx=fy=1, cx=cy=0 的單位內參，使 X=U*Z, Y=V*Z，方便驗算反投影數值。
+    同樣採用恆等深度映射（Z = d），驗算公式不受 near/far 影響。
     """
-    return CameraIntrinsics(fx=1.0, fy=1.0, cx=0.0, cy=0.0, width=10, height=10)
+    return CameraIntrinsics(
+        fx=1.0, fy=1.0, cx=0.0, cy=0.0, width=10, height=10,
+        depth_near=0.0, depth_far=1.0,
+    )
