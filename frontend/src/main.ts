@@ -22,6 +22,7 @@ const pctOut = $<HTMLOutputElement>("pctOut");
 const parallaxRange = $<HTMLInputElement>("parallax");
 const parOut = $<HTMLOutputElement>("parOut");
 const meshOnly = document.querySelector<HTMLDivElement>(".mesh-only");
+const loadSampleBtn = $<HTMLButtonElement>("loadSample");
 
 // 兩個檢視器並存：預設視差（輕量），mesh 為進階匯出選項。
 const viewport = $<HTMLElement>("viewport");
@@ -31,6 +32,19 @@ let meshViewer: Viewer | null = null;   // 延遲建立（避免兩個 WebGL can
 function currentMode(): "parallax" | "mesh" {
   const checked = document.querySelector<HTMLInputElement>('input[name="mode"]:checked');
   return (checked?.value as "parallax" | "mesh") ?? "parallax";
+}
+
+/** 依目前模式只顯示對應檢視器的 canvas，另一個隱藏（避免疊放互蓋，#2）。 */
+function applyViewerVisibility(): void {
+  const mesh = currentMode() === "mesh";
+  parallaxViewer.setVisible(!mesh);
+  meshViewer?.setVisible(mesh);
+}
+
+/** 清空視口已載入內容、回到空狀態（模式切換 / 重新合成前呼叫，#3）。 */
+function resetViewport(): void {
+  meshViewer?.clear();
+  emptyState.hidden = false;
 }
 
 // --- 狀態顯示輔助 ---
@@ -68,16 +82,54 @@ parallaxRange.addEventListener("input", () => {
   parallaxRange.setAttribute("aria-valuetext", text);
 });
 
-// --- 模式切換：顯示/隱藏 mesh-only 進階參數，並更新按鈕可用性 ---
+// --- 模式切換：顯示/隱藏 mesh-only 進階參數、切換檢視器、清掉舊結果 ---
 document.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((r) => {
   r.addEventListener("change", () => {
     if (meshOnly) meshOnly.hidden = currentMode() !== "mesh";
+    // #3：切換模式時刷掉上一個模式的結果，回到空狀態並提示需重新合成。
+    resetViewport();
+    applyViewerVisibility();
+    setStatus("已切換模式，請按「合成 3D 照片」重新產生。");
     refreshButton();
   });
 });
 
 rgbInput.addEventListener("change", refreshButton);
 depthInput.addEventListener("change", refreshButton);
+
+// --- 快速測試：載入內建測試範例圖（#4）---
+async function urlToFile(url: string, filename: string, mime: string): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`無法載入範例圖 ${filename}（HTTP ${res.status}）`);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: mime });
+}
+
+/** 把 File 塞回 <input type=file>，使後續流程與真實上傳完全一致。 */
+function setInputFile(input: HTMLInputElement, file: File): void {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+}
+
+loadSampleBtn.addEventListener("click", async () => {
+  loadSampleBtn.disabled = true;
+  try {
+    setStatus("載入測試範例圖…", "loading");
+    const [rgbFile, depthFile] = await Promise.all([
+      urlToFile("/samples/RGB_TEST.jpg", "RGB_TEST.jpg", "image/jpeg"),
+      urlToFile("/samples/DEPTH_TEST.png", "DEPTH_TEST.png", "image/png"),
+    ]);
+    setInputFile(rgbInput, rgbFile);
+    setInputFile(depthInput, depthFile);
+    refreshButton();
+    setStatus("✅ 已載入測試範例圖，按「合成 3D 照片」即可觀察效果。", "ok");
+  } catch (err) {
+    setStatus(`❌ ${(err as Error).message}`, "error");
+  } finally {
+    loadSampleBtn.disabled = false;
+  }
+});
 
 // --- 合成 ---
 btn.addEventListener("click", async () => {
@@ -93,6 +145,7 @@ btn.addEventListener("click", async () => {
       const result = await parallax({ rgb, depth });
       await parallaxViewer.loadParallax(result.rgbUrl, result.depthUrl);
       parallaxViewer.setIntensity(Number(intensity.value));
+      applyViewerVisibility();   // #2：顯示視差 canvas、隱藏 mesh canvas
       emptyState.hidden = true;
       setStatus("✅ 完成：按住拖曳即可看 3D 視差。", "ok");
     } else {
@@ -108,6 +161,7 @@ btn.addEventListener("click", async () => {
         maxPixels: 500_000,
       });
       await meshViewer.loadGlb(result.glb);
+      applyViewerVisibility();   // #2：顯示 mesh canvas、隱藏視差 canvas
       emptyState.hidden = true;
       setStatus(
         `✅ 完成：${result.vertexCount} 頂點 / ${result.faceCount} 面（可匯出 .glb）。`,

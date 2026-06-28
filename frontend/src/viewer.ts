@@ -59,6 +59,19 @@ export class Viewer {
     this.animate();
   }
 
+  /** 顯示/隱藏本檢視器的 canvas（模式切換用，避免兩個 canvas 疊放互蓋）。 */
+  setVisible(visible: boolean): void {
+    this.renderer.domElement.style.display = visible ? "block" : "none";
+  }
+
+  /** 移除場景中現有模型（模式切換 / 重新合成時清空）。 */
+  clear(): void {
+    if (this.current) {
+      this.scene.remove(this.current);
+      this.current = null;
+    }
+  }
+
   /** 載入 .glb（ArrayBuffer），替換場景中現有模型並重新置中相機。 */
   async loadGlb(glb: ArrayBuffer): Promise<void> {
     const gltf = await this.loader.parseAsync(glb, "");
