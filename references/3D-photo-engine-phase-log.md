@@ -117,7 +117,35 @@
 
 ## Open Questions / TODO
 - 殘影 A+B 已上線，待使用者實機調「邊界穩定」滑桿找甜蜜點（多→調大、太死→調小）；不透明邊界應收斂，玻璃/半透明仍受限（屬本質、留 C）
-- **C（未來進階路線）**：LDI + 學習式補繪（vt-vl-lab/3d-photo-inpainting 同類），與「單張 RGB→自動估深」一起做，共用 backend/depth_estimator.py 注入接口
+- **C（disocclusion 學習式補繪）已完成規劃 → 見 Phase 4 段落**（C1 墊底 + 3DGS 換代雙軌）
 - mesh 模式目前在同 viewport 疊第二 canvas（最簡並存）；若要切回清視差 canvas 需加互斥
 - 自動估深尚未接模型（NoOp）；未來 MiDaS/Depth-Anything 注入點已就位
-- 分支 `fix/depth-semantics-coordinate-cliff` 現含 Step 1+2+3，仍未 commit / PR
+- 分支 `fix/depth-semantics-coordinate-cliff` 已 commit（5 個語意化 commit）並開 PR #1（→ main）
+
+# Phase Checkpoint
+- Project: 3D-Photo-Synthesis-Engine
+- Phase: Phase 4 – C：disocclusion 學習式補繪（規劃，尚未動工）
+- Status: in-progress（僅規劃完成；使用者要求 compact 後再執行）
+- Date: 2026-06-28
+- Detail: references/3D-photo-engine-phase4-plan.md
+
+## Goals
+- 規劃如何根治殘影（disocclusion）——輕量視差 A+B 已到本質天花板，需「真的把被遮擋區畫出來」
+- 不動輕量預設路線（/parallax），C 全走 mesh/進階路線
+
+## Decisions
+- 調研三代：①vt-vl-lab/3d-photo-inpainting(CVPR2020) 已過時不維護(Py3.7/torch1.4)、不原樣整合；②SLIDE(2021) 概念參考；③2024–2025 = 基礎模型深度 + warp + 擴散補繪 / **3DGS**
+- **關鍵判斷**：「warp+2D 擴散補洞」非最優——逐視角 2D 補丁會 temporal flicker、仍困在 2.5D 單層。純本地+足夠好品質的真正解是 **3D Gaussian Splatting（單圖→完整 3D 生成，跨視角一致無閃爍）**
+- **定案雙軌（使用者裁示「C1 墊底再換上 3DGS」）**：
+  - 軌道一 C1：`DepthAwareInpainter(AbstractInpainter)` 注入 Orchestrator primary（Telea 轉 fallback），DIBR 原則只取背景排前景；純 CPU、零 GPU 依賴、沿用既有接口與降級鏈 → 墊底保底
+  - 軌道二 3DGS：換代級——產物 .glb→.ply/splat、前端 GLTFLoader→3DGS 渲染器、新增 `/splat` 端點與既有兩端點並存、補洞 seam 用不上（生成時建進 3D）、torch+模型權重選用安裝
+- 本機**有 GPU**（3DGS 軌道可實跑）；重依賴一律選用安裝 + import 失敗優雅退回
+
+## Changes
+- （本回合無程式碼變更）references/3D-photo-engine-phase4-plan.md：完整調研 + 雙軌落地計畫
+
+## Open Questions / TODO
+- **下一 session 接手點**：從軌道一 C1 的 `DepthAwareInpainter` 實作開始（最低風險、立即見效）
+- 並行：3DGS spike（本機 GPU 跑單圖→splat + 前端試渲染，驗品質/延遲/可行性）→ 通過再規劃正式換代
+- 3DGS 前端渲染器候選：@mkkellogg/gaussian-splats-3d 或 Three.js splat 方案
+- 玻璃/半透明屬本質限制，即使 3DGS 亦有極限，不過度承諾
