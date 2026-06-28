@@ -41,6 +41,10 @@
             <span>視差模式（快，預設）</span>
           </label>
           <label class="radio">
+            <input type="radio" name="mode" value="ldi" />
+            <span>LDI 分層補洞（縱深更佳）</span>
+          </label>
+          <label class="radio">
             <input type="radio" name="mode" value="mesh" />
             <span>Mesh 模式（可匯出 .glb，較慢）</span>
           </label>
@@ -58,6 +62,13 @@
             <input type="range" id="edgeFalloff" min="0" max="20" step="0.5" value="6"
                    aria-label="邊界穩定，值越大物件邊緣殘影越少但視差越保守" aria-valuetext="6.0" />
           </label>
+          <div class="ldi-only" hidden>
+            <label class="field">
+              <span>LDI 層數 (<output id="layerOut">2</output>)</span>
+              <input type="range" id="numLayers" min="2" max="3" step="1" value="2"
+                     aria-label="LDI 分層數，越多縱深層次越細但越慢" aria-valuetext="2" />
+            </label>
+          </div>
           <div class="mesh-only" hidden>
             <label class="field checkbox" title="勾選後可自由旋轉/縮放看真實 3D 結構（會露出側面破洞）；預設為正面 FB 3D Photo 視差">
               <input type="checkbox" id="orbitMode" />

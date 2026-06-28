@@ -91,3 +91,64 @@ export async function parallax(p: ParallaxParams): Promise<ParallaxResult> {
     depthUrl: j.depth,
   };
 }
+
+export interface LDIParams {
+  rgb: File;
+  depth?: File;          // 選填：缺少時後端嘗試自動估算（目前未啟用 → 422）
+  numLayers?: number;    // 2~3，預設 2
+}
+
+export interface LDILayer {
+  color: string;         // data:image/png;base64,...
+  depth: string;
+  alpha: string;
+  depthMin: number;
+  depthMax: number;
+}
+
+export interface LDIResult {
+  width: number;
+  height: number;
+  numLayers: number;
+  layers: LDILayer[];    // 由近到遠
+}
+
+/** LDI 分層補洞路徑：上傳 RGB(+選填 depth)，回多層 RGBA+depth 供多層 shader 視差。 */
+export async function ldi(p: LDIParams): Promise<LDIResult> {
+  const form = new FormData();
+  form.append("rgb", p.rgb);
+  if (p.depth) form.append("depth", p.depth);
+
+  const q = new URLSearchParams();
+  if (p.numLayers !== undefined) q.set("num_layers", String(p.numLayers));
+
+  const res = await fetch(`${API_BASE}/ldi?${q.toString()}`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      detail = j.detail ?? detail;
+    } catch {
+      /* 非 JSON 錯誤，沿用狀態碼 */
+    }
+    throw new Error(detail);
+  }
+
+  const j = await res.json();
+  return {
+    width: j.width,
+    height: j.height,
+    numLayers: j.num_layers,
+    layers: (j.layers as any[]).map((l) => ({
+      color: l.color,
+      depth: l.depth,
+      alpha: l.alpha,
+      depthMin: l.depth_min,
+      depthMax: l.depth_max,
+    })),
+  };
+}

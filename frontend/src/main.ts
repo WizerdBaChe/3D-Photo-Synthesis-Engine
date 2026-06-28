@@ -1,7 +1,8 @@
 import "./style.css";
 import { Viewer } from "./viewer";
 import { ParallaxViewer } from "./parallax";
-import { synthesize, parallax } from "./api";
+import { LDIViewer } from "./ldi";
+import { synthesize, parallax, ldi } from "./api";
 
 // --- DOM 取得 ---
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -22,24 +23,31 @@ const pctOut = $<HTMLOutputElement>("pctOut");
 const parallaxRange = $<HTMLInputElement>("parallax");
 const parOut = $<HTMLOutputElement>("parOut");
 const meshOnly = document.querySelector<HTMLDivElement>(".mesh-only");
+const ldiOnly = document.querySelector<HTMLDivElement>(".ldi-only");
 const loadSampleBtn = $<HTMLButtonElement>("loadSample");
 const orbitMode = $<HTMLInputElement>("orbitMode");
+const numLayers = $<HTMLInputElement>("numLayers");
+const layerOut = $<HTMLOutputElement>("layerOut");
 
-// 兩個檢視器並存：預設視差（輕量），mesh 為進階匯出選項。
+// 三個檢視器並存：預設視差（輕量）、LDI 分層補洞、mesh 進階匯出。
 const viewport = $<HTMLElement>("viewport");
 const parallaxViewer = new ParallaxViewer(viewport);
-let meshViewer: Viewer | null = null;   // 延遲建立（避免兩個 WebGL canvas 同時佔資源）
+let meshViewer: Viewer | null = null;   // 延遲建立（避免多個 WebGL canvas 同時佔資源）
+let ldiViewer: LDIViewer | null = null; // 同上，延遲建立
 
-function currentMode(): "parallax" | "mesh" {
+type Mode = "parallax" | "ldi" | "mesh";
+
+function currentMode(): Mode {
   const checked = document.querySelector<HTMLInputElement>('input[name="mode"]:checked');
-  return (checked?.value as "parallax" | "mesh") ?? "parallax";
+  return (checked?.value as Mode) ?? "parallax";
 }
 
-/** 依目前模式只顯示對應檢視器的 canvas，另一個隱藏（避免疊放互蓋，#2）。 */
+/** 依目前模式只顯示對應檢視器的 canvas，其餘隱藏（避免疊放互蓋，#2）。 */
 function applyViewerVisibility(): void {
-  const mesh = currentMode() === "mesh";
-  parallaxViewer.setVisible(!mesh);
-  meshViewer?.setVisible(mesh);
+  const mode = currentMode();
+  parallaxViewer.setVisible(mode === "parallax");
+  ldiViewer?.setVisible(mode === "ldi");
+  meshViewer?.setVisible(mode === "mesh");
 }
 
 /** 清空視口已載入內容、回到空狀態（模式切換 / 重新合成前呼叫，#3）。 */
@@ -56,10 +64,11 @@ function setStatus(msg: string, kind: "" | "loading" | "ok" | "error" = ""): voi
 }
 
 function refreshButton(): void {
-  // RGB 必填；depth 在視差模式選填、mesh 模式必填。
+  // RGB 必填；depth 在視差 / LDI 模式選填（可自動估算）、mesh 模式必填。
   const hasRgb = !!rgbInput.files?.length;
   const hasDepth = !!depthInput.files?.length;
-  btn.disabled = !(hasRgb && (currentMode() === "parallax" || hasDepth));
+  const mode = currentMode();
+  btn.disabled = !(hasRgb && (mode === "parallax" || mode === "ldi" || hasDepth));
 }
 
 // --- 進階參數即時顯示 ---
@@ -67,6 +76,7 @@ intensity.addEventListener("input", () => {
   intOut.value = intensity.value;
   intensity.setAttribute("aria-valuetext", intensity.value);
   parallaxViewer.setIntensity(Number(intensity.value));
+  ldiViewer?.setIntensity(Number(intensity.value));
 });
 edgeFalloff.addEventListener("input", () => {
   edgeOut.value = Number(edgeFalloff.value).toFixed(1);
@@ -82,11 +92,17 @@ parallaxRange.addEventListener("input", () => {
   parOut.value = text;
   parallaxRange.setAttribute("aria-valuetext", text);
 });
+numLayers.addEventListener("input", () => {
+  layerOut.value = numLayers.value;
+  numLayers.setAttribute("aria-valuetext", numLayers.value);
+});
 
-// --- 模式切換：顯示/隱藏 mesh-only 進階參數、切換檢視器、清掉舊結果 ---
+// --- 模式切換：顯示/隱藏各模式專屬參數、切換檢視器、清掉舊結果 ---
 document.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((r) => {
   r.addEventListener("change", () => {
-    if (meshOnly) meshOnly.hidden = currentMode() !== "mesh";
+    const mode = currentMode();
+    if (meshOnly) meshOnly.hidden = mode !== "mesh";
+    if (ldiOnly) ldiOnly.hidden = mode !== "ldi";
     // #3：切換模式時刷掉上一個模式的結果，回到空狀態並提示需重新合成。
     resetViewport();
     applyViewerVisibility();
@@ -146,14 +162,27 @@ btn.addEventListener("click", async () => {
   btn.disabled = true;
 
   try {
-    if (currentMode() === "parallax") {
+    const mode = currentMode();
+    if (mode === "parallax") {
       setStatus("處理中…", "loading");
       const result = await parallax({ rgb, depth });
       await parallaxViewer.loadParallax(result.rgbUrl, result.depthUrl);
       parallaxViewer.setIntensity(Number(intensity.value));
-      applyViewerVisibility();   // #2：顯示視差 canvas、隱藏 mesh canvas
+      applyViewerVisibility();   // #2：顯示視差 canvas、隱藏其他 canvas
       emptyState.hidden = true;
       setStatus("✅ 完成：按住拖曳即可看 3D 視差。", "ok");
+    } else if (mode === "ldi") {
+      setStatus("分層補洞中…（後端切層並預填背景，大圖可能需數秒）", "loading");
+      if (!ldiViewer) ldiViewer = new LDIViewer(viewport);
+      const result = await ldi({ rgb, depth, numLayers: Number(numLayers.value) });
+      await ldiViewer.loadLDI(result.layers, result.width, result.height);
+      ldiViewer.setIntensity(Number(intensity.value));
+      applyViewerVisibility();   // #2：顯示 LDI canvas、隱藏其他 canvas
+      emptyState.hidden = true;
+      setStatus(
+        `✅ 完成：${result.numLayers} 層，按住拖曳即可看縱深視差（前景滑開露出預填背景）。`,
+        "ok",
+      );
     } else {
       if (!depth) return;
       setStatus("合成中…（後端計算 3D 網格，大圖可能需數秒）", "loading");
