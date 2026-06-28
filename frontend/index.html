@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Photo Synthesis Engine</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <h1>3D Photo Synthesis</h1>
+        <p class="hint">上傳 RGB 圖（深度圖選填），合成可拖曳檢視的 3D 視差照片。</p>
+
+        <label class="field">
+          <span>RGB 圖片</span>
+          <input type="file" id="rgb" accept="image/*" />
+        </label>
+
+        <label class="field">
+          <span>深度圖（選填）</span>
+          <input type="file" id="depth" accept="image/*" />
+        </label>
+
+        <label class="field checkbox" title="未來支援：未提供深度圖時由模型自動估算（目前未啟用）">
+          <input type="checkbox" id="autoDepth" disabled />
+          <span>自動估算深度（即將推出）</span>
+        </label>
+
+        <fieldset class="field mode">
+          <legend>檢視模式</legend>
+          <label class="radio">
+            <input type="radio" name="mode" value="parallax" checked />
+            <span>視差模式（快，預設）</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="mode" value="mesh" />
+            <span>Mesh 模式（可匯出 .glb，較慢）</span>
+          </label>
+        </fieldset>
+
+        <details class="adv">
+          <summary>進階參數</summary>
+          <label class="field">
+            <span>視差強度 (<output id="intOut">0.06</output>)</span>
+            <input type="range" id="intensity" min="0.01" max="0.15" step="0.005" value="0.06"
+                   aria-label="視差強度，值越大立體分離越明顯" aria-valuetext="0.06" />
+          </label>
+          <label class="field">
+            <span>邊界穩定 (<output id="edgeOut">6.0</output>)</span>
+            <input type="range" id="edgeFalloff" min="0" max="20" step="0.5" value="6"
+                   aria-label="邊界穩定，值越大物件邊緣殘影越少但視差越保守" aria-valuetext="6.0" />
+          </label>
+          <div class="mesh-only" hidden>
+            <label class="field">
+              <span>斷邊百分位 (<output id="pctOut">95</output>)</span>
+              <input type="range" id="percentile" min="50" max="99.9" step="0.1" value="95"
+                     aria-label="斷邊百分位，值越高越少邊緣裂開" aria-valuetext="95" />
+            </label>
+            <label class="field">
+              <span>近/遠視差 near/far (<output id="parOut">1.0 / 4.0</output>)</span>
+              <input type="range" id="parallax" min="1.5" max="8" step="0.5" value="4"
+                     aria-label="近遠視差，值越大立體分離越明顯" aria-valuetext="1.0 / 4.0" />
+            </label>
+          </div>
+        </details>
+
+        <button id="synthesize" disabled>合成 3D 照片</button>
+        <p id="status" class="status" role="status" aria-live="polite">
+          <span id="spinner" class="spinner" hidden aria-hidden="true"></span>
+          <span id="statusText">請選擇 RGB 與深度圖。</span>
+        </p>
+      </aside>
+
+      <main id="viewport" role="img" aria-label="3D 照片預覽區，可用滑鼠拖曳產生視差">
+        <div id="emptyState" class="empty-state">
+          <div class="empty-icon" aria-hidden="true">🖼️→🧊</div>
+          <p class="empty-title">尚無 3D 照片</p>
+          <p class="empty-sub">選擇左側的 RGB 圖（深度圖選填）並按「合成 3D 照片」，<br />結果會出現在此，按住拖曳即可看 3D 視差。</p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

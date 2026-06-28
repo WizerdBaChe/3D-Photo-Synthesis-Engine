@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.local
+.vite/
+
+# tsc 的 JS emit（型別檢查用 noEmit，打包交給 Vite；防止意外提交編譯產物）
+src/*.js
