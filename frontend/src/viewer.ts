@@ -19,10 +19,11 @@ export class Viewer {
   private loader = new GLTFLoader();
 
   // 視差幅度（依模型尺寸自適應，frameObject 設定）。
-  private baseDistance = 6;          // 相機到中心的基準距離
+  private baseDistance = 6;          // 相機站位到 mesh 正面的距離
+  private cameraZ = 6;               // 相機的世界 Z（= frontZ + baseDistance）
   private panAmount = 0;             // 最大平移量（相機 X/Y 偏移）
   private readonly maxTiltDeg = 8;   // lookAt 目標偏移對應的最大視角（度）
-  private target = new THREE.Vector3(0, 0, 0);   // 物體中心（lookAt 基準）
+  private target = new THREE.Vector3(0, 0, 0);   // lookAt 基準（正面稍往內）
   private tiltOffset = 0;            // lookAt 目標的最大橫向偏移（依尺寸）
 
   // 拖曳狀態（與 ParallaxViewer 對齊）：目標位移 [-1,1]、其平滑值。
@@ -98,14 +99,14 @@ export class Viewer {
     if (orbit) {
       // 切到 orbit：把相機重置到正面基準，控制器以 target 為中心。
       this.controls.target.copy(this.target);
-      this.camera.position.set(this.target.x, this.target.y, this.target.z + this.baseDistance);
+      this.camera.position.set(this.target.x, this.target.y, this.cameraZ);
       this.controls.update();
       el.style.cursor = "default";
     } else {
       // 切回視差：歸零拖曳、相機回正面。
       this.dragTarget.set(0, 0);
       this.smoothed.set(0, 0);
-      this.camera.position.set(this.target.x, this.target.y, this.target.z + this.baseDistance);
+      this.camera.position.set(this.target.x, this.target.y, this.cameraZ);
       this.camera.lookAt(this.target);
       el.style.cursor = "grab";
     }
@@ -137,33 +138,45 @@ export class Viewer {
   }
 
   /**
-   * 把相機置於影像正前方中央，並依模型尺寸設定視差幅度。
+   * 把相機貼近 mesh 的「正面（近平面）」中央，營造「鏡頭在場景內、只見照片內容」
+   * 的視差檢視感（對齊 ParallaxViewer），而非「從遠處看一個 3D 物件擺件」。
    *
-   * 解「浮雕感」的關鍵（與舊版差異）：
-   *   舊版 baseDistance = (maxDim/2)/tan(fov/2) * 1.4，把整個 3D box 從遠處框住，
-   *   配上極小平移量 → 看到的是近乎平面的正面 = 浮雕。
-   *   新版相機拉近（係數 0.95，幾乎貼著照片框滿視野），平移幅度加大，拖曳驅動，
-   *   讓近景與遠景在視差中明顯錯動 → 身歷其境而非浮雕。
+   * 為什麼要貼著正面而非框住整個 box：
+   *   反投影後的 mesh 是個透視「視錐」——近平面內容窄、遠平面（後牆）被透視撐到
+   *   約 4 倍寬。若用整體 bbox 寬度(=遠平面寬)定框距，相機會被推到視錐外，整個
+   *   房間 box（含地板/天花/左右牆輪廓）全入鏡 → 就是「遠看 3D 物件」的觀感。
+   *   改為：相機貼到 box「最靠近觀者那一面」(front = 最大 Z) 前方一小段，框距只
+   *   依「正面內容尺寸」估算 → 後方較寬的牆面自然填滿並溢出視野、box 輪廓落在框外，
+   *   視角一動近景遠景明顯錯動 = 身歷其境。
    */
   private frameObject(obj: THREE.Object3D): void {
     const box = new THREE.Box3().setFromObject(obj);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
-    // 用「寬高」(x,y) 而非含深度的 maxDim 來定框距：避免深度把相機推遠而壓平視差。
-    const frameDim = Math.max(size.x, size.y);
+    // mesh 座標系：Z = -Z_cam，故「最靠近觀者的正面」= box 的 max.z。
+    const frontZ = box.max.z;
+
+    // 正面（近平面）內容尺寸估算：bbox 的 y 高度是「遠平面」被透視撐大的結果
+    // （預設 near:far=1:4，遠平面約為近平面的 ~4 倍）。要框「正面內容」而非整個視錐，
+    // 故取 bbox 高度的一個比例當作正面框高——係數越小相機越貼、box 輪廓越易溢出視野。
+    const frontDim = size.y * 0.4;     // 以近平面內容尺度為框高（解「遠看 3D 物件」）
     const fov = (this.camera.fov * Math.PI) / 180;
-    // 拉近：照片幾乎填滿視野（0.95），近景遠景錯動明顯，解浮雕感。
-    this.baseDistance = (frameDim / 2) / Math.tan(fov / 2) * 0.95;
+    this.baseDistance = (frontDim / 2) / Math.tan(fov / 2);
 
-    // 視差幅度大幅加大（舊 0.06/0.04 → 0.18/0.10），拖曳時近遠景明顯錯位。
-    this.panAmount = frameDim * 0.18;
-    this.tiltOffset = frameDim * 0.10;
+    // 視差平移幅度：相對正面內容尺寸，拖曳時近景（前景物件）與後牆明顯相對位移。
+    this.panAmount = frontDim * 0.22;
+    this.tiltOffset = frontDim * 0.12;
 
-    this.target.copy(center);
-    this.camera.position.set(center.x, center.y, center.z + this.baseDistance);
-    this.camera.near = this.baseDistance / 100;
-    this.camera.far = this.baseDistance * 100;
+    // lookAt 目標放在「正面稍微往內」一點（不是整個 box 的幾何中心），
+    // 使視線聚焦於照片主體平面，而非把深遠的後牆也納入構圖中心。
+    this.target.set(center.x, center.y, frontZ - size.z * 0.15);
+
+    // 相機站在正面前方 baseDistance 處。
+    this.cameraZ = frontZ + this.baseDistance;
+    this.camera.position.set(center.x, center.y, this.cameraZ);
+    this.camera.near = Math.max(this.baseDistance / 100, 0.001);
+    this.camera.far = (this.baseDistance + size.z) * 100;
     this.camera.lookAt(this.target);
     this.camera.updateProjectionMatrix();
 
@@ -223,7 +236,7 @@ export class Viewer {
     this.camera.position.set(
       this.target.x + px * this.panAmount,
       this.target.y - py * this.panAmount,
-      this.target.z + this.baseDistance,
+      this.cameraZ,
     );
 
     // lookAt 目標反向小幅偏移，形成輕微 tilt（強化視差深度感）。
