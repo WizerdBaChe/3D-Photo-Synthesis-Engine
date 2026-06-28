@@ -52,6 +52,8 @@ function applyViewerVisibility(): void {
 
 /** 清空視口已載入內容、回到空狀態（模式切換 / 重新合成前呼叫，#3）。 */
 function resetViewport(): void {
+  parallaxViewer.clear();
+  ldiViewer?.clear();
   meshViewer?.clear();
   emptyState.hidden = false;
 }
@@ -82,6 +84,7 @@ edgeFalloff.addEventListener("input", () => {
   edgeOut.value = Number(edgeFalloff.value).toFixed(1);
   edgeFalloff.setAttribute("aria-valuetext", edgeOut.value);
   parallaxViewer.setEdgeFalloff(Number(edgeFalloff.value));
+  ldiViewer?.setEdgeFalloff(Number(edgeFalloff.value));
 });
 pct.addEventListener("input", () => {
   pctOut.value = pct.value;
@@ -175,8 +178,12 @@ btn.addEventListener("click", async () => {
       setStatus("分層補洞中…（後端切層並預填背景，大圖可能需數秒）", "loading");
       if (!ldiViewer) ldiViewer = new LDIViewer(viewport);
       const result = await ldi({ rgb, depth, numLayers: Number(numLayers.value) });
-      await ldiViewer.loadLDI(result.layers, result.width, result.height);
+      await ldiViewer.loadLDI(
+        result.rgbUrl, result.depthUrl, result.bgUrl,
+        result.width, result.height, result.layers,
+      );
       ldiViewer.setIntensity(Number(intensity.value));
+      ldiViewer.setEdgeFalloff(Number(edgeFalloff.value));
       applyViewerVisibility();   // #2：顯示 LDI canvas、隱藏其他 canvas
       emptyState.hidden = true;
       setStatus(

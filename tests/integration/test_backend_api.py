@@ -196,6 +196,9 @@ class TestLDI:
         body = r.json()
         assert body["width"] == 48 and body["height"] == 48
         assert body["num_layers"] == len(body["layers"]) >= 2
+        # 連續渲染用的原圖 RGB/depth + 預填背景底層。
+        for key in ("rgb", "depth", "bg"):
+            assert body[key].startswith("data:image/png;base64,"), key
         for layer in body["layers"]:
             assert layer["color"].startswith("data:image/png;base64,")
             assert layer["depth"].startswith("data:image/png;base64,")

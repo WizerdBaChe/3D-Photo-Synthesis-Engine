@@ -127,6 +127,16 @@ export class ParallaxViewer {
     this.renderer.domElement.style.display = visible ? "block" : "none";
   }
 
+  /** 移除已載入的 quad（模式切換 / 重新合成時清空，避免殘留舊圖）。 */
+  clear(): void {
+    if (this.mesh) {
+      this.scene.remove(this.mesh);
+      this.mesh = null;
+    }
+    this.target.set(0, 0);
+    this.smoothed.set(0, 0);
+  }
+
   /** 設定視差強度（UI 滑桿綁定；對應 Step 4 的「視差強度語意」）。 */
   setIntensity(v: number): void {
     this.material.uniforms.uIntensity.value = v;

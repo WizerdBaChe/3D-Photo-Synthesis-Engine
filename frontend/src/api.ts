@@ -110,7 +110,10 @@ export interface LDIResult {
   width: number;
   height: number;
   numLayers: number;
-  layers: LDILayer[];    // 由近到遠
+  rgbUrl: string;        // 原圖 RGB（連續位移用）
+  depthUrl: string;      // 原圖正規化 depth
+  bgUrl: string;         // 預填背景底層（disocclusion 取代用）
+  layers: LDILayer[];    // 由近到遠（標準化 / .ldi 用）
 }
 
 /** LDI 分層補洞路徑：上傳 RGB(+選填 depth)，回多層 RGBA+depth 供多層 shader 視差。 */
@@ -143,6 +146,9 @@ export async function ldi(p: LDIParams): Promise<LDIResult> {
     width: j.width,
     height: j.height,
     numLayers: j.num_layers,
+    rgbUrl: j.rgb,
+    depthUrl: j.depth,
+    bgUrl: j.bg,
     layers: (j.layers as any[]).map((l) => ({
       color: l.color,
       depth: l.depth,

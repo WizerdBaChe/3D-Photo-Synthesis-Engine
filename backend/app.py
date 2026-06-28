@@ -292,8 +292,16 @@ async def ldi(
     做縱深視差（Facebook 3D Photo 式）。**不產生 mesh/.glb**。
 
     depth 選填：缺少時呼叫可插拔 DepthEstimator（預設未啟用 → 422）。
-    回傳 JSON：{ width, height, num_layers, layers:[{color,depth,alpha,depth_min,depth_max}] }
-      color/depth/alpha 皆為 data:image/png;base64 URL（layer 由近到遠）。
+    回傳 JSON：
+      { width, height, num_layers,
+        rgb, depth,            # 原圖 RGB + 正規化 depth（連續逐像素位移用，避免紙板感）
+        bg,                    # 預先補洞的「背景底層」RGB（連續位移露出遮擋處時取代）
+        layers:[{color,depth,alpha,depth_min,depth_max}] }   # 完整分層（標準化 / .ldi 用）
+      所有影像皆為 data:image/png;base64 URL。
+
+    渲染模型（修正紙板抽離感）：前端採與視差模式相同的**連續逐像素 depth 位移**
+    （depth 平滑→位移漸變→無硬邊紙板感），但取樣落在被前景掀開的 disocclusion 處時，
+    改取 `bg`（預填背景）而非鄰近前景，兼得「連續無紙板」+「無黑洞」。
     """
     color_bgr, depth_f32 = await _acquire_color_depth(
         rgb, depth, max_pixels, depth_convention
@@ -317,6 +325,10 @@ async def ldi(
             "depth_max": layer.depth_max,
         })
 
+    # 連續渲染用：原圖 RGB + 正規化 depth + 背景底層（scene.layers 由近到遠，最後=背景底）。
+    depth_full_u8 = np.clip(depth_f32 * 255.0, 0, 255).astype(np.uint8)
+    bg_color = scene.layers[-1].color if scene.layers else color_bgr
+
     logger.info(
         f"LDI 資料完成：{scene.width}×{scene.height}，{scene.num_layers} 層"
         f"（depth={'上傳' if depth else '估算'}）"
@@ -325,5 +337,8 @@ async def ldi(
         "width": scene.width,
         "height": scene.height,
         "num_layers": scene.num_layers,
+        "rgb": _png_data_url(color_bgr),
+        "depth": _png_data_url(depth_full_u8),
+        "bg": _png_data_url(bg_color),
         "layers": layers_payload,
     }
