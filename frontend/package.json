@@ -1,0 +1,20 @@
+{
+  "name": "3d-photo-synthesis-frontend",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "前端：上傳 RGB+Depth，呼叫後端合成 .glb，以 Three.js/WebGL 即時互動旋轉 3D 照片。",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.171.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.171.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

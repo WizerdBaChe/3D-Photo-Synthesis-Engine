@@ -50,26 +50,64 @@ class CameraIntrinsics:
     相機內參矩陣（Pinhole Camera Model）。
 
     用途：幾何引擎進行像素→3D 反投影時使用。
+
+    深度尺度（C-3 修正）：
+      深度圖在載入時被正規化到 [0, 1]（相對深度 / 視差倒數），
+      但反投影公式 X=(u-cx)*Z/fx 需要「具一致物理尺度」的 Z，
+      否則不同圖片的 max 會把同一物體任意縮放、透視關係失真。
+      因此將正規化深度 d∈[0,1] 線性映射回實際相機座標 Z：
+
+          Z = depth_near + d * (depth_far - depth_near)
+
+      depth_near / depth_far 定義場景在相機前方的近/遠平面（相機單位，如公尺）。
+      這讓 3D 照片擁有穩定、可重現的深度分離（Facebook 3D Photo 視差效果的關鍵）。
     """
-    fx: float    # 焦距 X（像素單位）
-    fy: float    # 焦距 Y（像素單位）
-    cx: float    # 光心 X（像素單位）
-    cy: float    # 光心 Y（像素單位）
-    width: int   # 圖片寬度（像素）
-    height: int  # 圖片高度（像素）
+    fx: float                    # 焦距 X（像素單位）
+    fy: float                    # 焦距 Y（像素單位）
+    cx: float                    # 光心 X（像素單位）
+    cy: float                    # 光心 Y（像素單位）
+    width: int                   # 圖片寬度（像素）
+    height: int                  # 圖片高度（像素）
+    depth_near: float = 1.0      # 正規化深度 0 對應的實際 Z（相機前方近平面）
+    depth_far:  float = 4.0      # 正規化深度 1 對應的實際 Z（相機前方遠平面）
 
 
 # ---------------------------------------------------------------------------
-# 通訊 Payload 契約（IPC / Queue）
+# 輸出資料契約：平台無關的網格表示
 # ---------------------------------------------------------------------------
 
 @dataclass
-class CameraPoseUpdate:
+class MeshData:
     """
-    相機位姿更新 DTO。
+    平台無關的 3D 網格資料（Web 架構核心輸出契約）。
 
-    用途：InputAdapter 計算後透過 Queue 傳遞給渲染引擎。
-    注意：因含 ndarray 欄位，不設 frozen=True（ndarray 不可雜湊）。
+    設計動機（去 Open3D 耦合）：
+      舊桌面版 build_topology 直接回傳 o3d.geometry.TriangleMesh，使整個
+      Core 綁死 Open3D。Web 架構下渲染交給前端 Three.js / WebGL，後端不需
+      Open3D。改以純 NumPy 陣列封裝網格，序列化為 glTF / JSON 給前端即可。
+
+    所有陣列皆為 row-major 展平，索引彼此對齊（vertices[i] 的顏色為 colors[i]）。
     """
-    extrinsic_matrix: np.ndarray  # Shape: (4, 4), dtype: np.float64
-    timestamp: float              # Unix 時間戳，用於丟棄過期指令
+    vertices: np.ndarray            # Shape: (V, 3), dtype: np.float32 — 3D 頂點座標
+    faces:    np.ndarray            # Shape: (F, 3), dtype: np.int32   — 三角面頂點索引
+    colors:   np.ndarray            # Shape: (V, 3), dtype: np.float32 — 頂點色 [0,1]
+    normals:  Optional[np.ndarray] = field(default=None)
+    # normals Shape: (V, 3), dtype: np.float32 — 頂點法線（可選，前端可自行計算）
+
+    @property
+    def vertex_count(self) -> int:
+        return int(self.vertices.shape[0])
+
+    @property
+    def face_count(self) -> int:
+        return int(self.faces.shape[0])
+
+
+# ---------------------------------------------------------------------------
+# 通訊 Payload 契約
+# ---------------------------------------------------------------------------
+#
+# 註（Web 架構）：
+#   相機位姿更新已完全移至前端（Three.js OrbitControls 在瀏覽器端即時旋轉），
+#   後端不再需要任何位姿 DTO / IPC 指令。舊桌面版的 CameraPoseCommand /
+#   MeshLoadCommand 等已封存於 archive/src/app/commands.py。

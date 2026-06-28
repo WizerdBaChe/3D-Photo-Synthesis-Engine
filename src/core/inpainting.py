@@ -22,6 +22,23 @@ from src.core.contracts import RGBDFrame
 
 
 # ---------------------------------------------------------------------------
+# 修補專屬例外（取代脆弱的字串比對降級判定）
+# ---------------------------------------------------------------------------
+
+class VRAMExhaustedError(RuntimeError):
+    """
+    顯存耗盡，需要觸發降級備案（DD-008）。
+
+    設計動機：
+      OOM 的判定責任應落在「最了解 PyTorch 行為」的修補模組內部，
+      由修補器在捕捉到 CUDA OOM 後重新包裝拋出此例外。
+      Orchestrator 只需捕捉此型別即可決定是否降級，
+      不再依賴 'out of memory' in str(e) 這種對訊息格式的隱性假設。
+    """
+    pass
+
+
+# ---------------------------------------------------------------------------
 # 顯存管理策略列舉（DD-008）
 # ---------------------------------------------------------------------------
 
@@ -92,9 +109,20 @@ class TeleaInpainter(AbstractInpainter):
 
         # 2. 深度圖修補（Shape: H, W → H, W，維持 float32 精度）
         #    cv2.inpaint 支援單通道 float32
+        depth_f32 = frame.depth.astype(np.float32)
         repaired_depth = cv2.inpaint(
-            frame.depth.astype(np.float32), cv2_mask, self.radius, cv2.INPAINT_TELEA
+            depth_f32, cv2_mask, self.radius, cv2.INPAINT_TELEA
         )
+
+        # 2b. 深度防尖刺裁切（DD-007 動機：避免破洞處深度外插成尖刺/拉伸）。
+        #     Telea 在尖銳斷崖邊界會把深度外插到原值域之外，反投影後在 3D
+        #     空間形成明顯尖刺。將修補後深度裁切回「原始有效像素」的值域，
+        #     使補全的背景在 3D 中維持合理且平滑的幾何（Facebook 3D Photo 視覺品質）。
+        valid = ~frame.mask
+        if np.any(valid):
+            lo = float(depth_f32[valid].min())
+            hi = float(depth_f32[valid].max())
+            repaired_depth = np.clip(repaired_depth, lo, hi)
 
         # 3. 回傳全新 DTO，清除遮罩（填補完成後無破洞）
         return RGBDFrame(
@@ -158,8 +186,25 @@ class LaMaInpainter(AbstractInpainter):
     def fill(self, frame: RGBDFrame) -> RGBDFrame:
         """
         MVP 注意：目前拋出 NotImplementedError 以明確指示尚未整合。
-        Orchestrator 的 OOM 降級邏輯只捕捉 RuntimeError，
-        此 NotImplementedError 將正常向上傳遞（屬預期行為）。
+
+        整合契約（重製版）：
+          真正接入模型後，推論區段必須以 try/except 捕捉 PyTorch 的 CUDA OOM，
+          並重新包裝為 VRAMExhaustedError 拋出，例如：
+
+              try:
+                  with torch.no_grad():
+                      repaired = self.model(image_tensor, mask_tensor)
+              except torch.cuda.OutOfMemoryError as e:        # torch>=2.0
+                  torch.cuda.empty_cache()
+                  raise VRAMExhaustedError(str(e)) from e
+              except RuntimeError as e:                        # 舊版 torch 相容
+                  if "out of memory" in str(e).lower():
+                      torch.cuda.empty_cache()
+                      raise VRAMExhaustedError(str(e)) from e
+                  raise
+
+          Orchestrator 只攔截 VRAMExhaustedError 來決定是否降級，
+          因此 OOM 的判定責任完全封裝在此模組內（消除字串比對耦合）。
         """
         raise NotImplementedError(
             "[LaMaInpainter] 模型尚未整合。\n"
