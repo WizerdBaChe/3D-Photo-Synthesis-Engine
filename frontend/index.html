@@ -26,6 +26,14 @@
           <span>自動估算深度（即將推出）</span>
         </label>
 
+        <div class="field sample">
+          <span>快速測試</span>
+          <button type="button" id="loadSample" class="secondary"
+                  title="載入內建的 RGB + 深度測試圖，免上傳即可立即觀察效果">
+            🖼️ 載入測試範例圖
+          </button>
+        </div>
+
         <fieldset class="field mode">
           <legend>檢視模式</legend>
           <label class="radio">
@@ -51,6 +59,10 @@
                    aria-label="邊界穩定，值越大物件邊緣殘影越少但視差越保守" aria-valuetext="6.0" />
           </label>
           <div class="mesh-only" hidden>
+            <label class="field checkbox" title="勾選後可自由旋轉/縮放看真實 3D 結構（會露出側面破洞）；預設為正面 FB 3D Photo 視差">
+              <input type="checkbox" id="orbitMode" />
+              <span>自由旋轉視角（進階觀察）</span>
+            </label>
             <label class="field">
               <span>斷邊百分位 (<output id="pctOut">95</output>)</span>
               <input type="range" id="percentile" min="50" max="99.9" step="0.1" value="95"

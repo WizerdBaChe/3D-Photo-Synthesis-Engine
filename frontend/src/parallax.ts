@@ -79,8 +79,8 @@ export class ParallaxViewer {
   private dragStart = new THREE.Vector2();
   private target = new THREE.Vector2(0, 0);
   private smoothed = new THREE.Vector2(0, 0);
-  private readonly damping = 0.18;        // 越大反應越快（#1：原 0.08 偏慢）
-  private readonly dragScale = 2.2;       // 拖曳靈敏度：易推到 [-1,1] 上限
+  private readonly damping = 0.18;        // 放開回正的平滑阻尼（僅在非拖曳時生效）
+  private readonly dragScale = 3.5;       // 拖曳靈敏度：小幅拖曳即推到 [-1,1] 上限（#1：原 2.2 偏鈍）
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -120,6 +120,11 @@ export class ParallaxViewer {
 
     window.addEventListener("resize", () => this.onResize());
     this.animate();
+  }
+
+  /** 顯示/隱藏本檢視器的 canvas（模式切換用，避免兩個 canvas 疊放互蓋）。 */
+  setVisible(visible: boolean): void {
+    this.renderer.domElement.style.display = visible ? "block" : "none";
   }
 
   /** 設定視差強度（UI 滑桿綁定；對應 Step 4 的「視差強度語意」）。 */
@@ -214,7 +219,12 @@ export class ParallaxViewer {
 
   private animate = (): void => {
     requestAnimationFrame(this.animate);
-    this.smoothed.lerp(this.target, this.damping);
+    // 拖曳中：直接跟手（無阻尼，最即時）；放開後：平滑回正（阻尼 lerp）。
+    if (this.dragging) {
+      this.smoothed.copy(this.target);
+    } else {
+      this.smoothed.lerp(this.target, this.damping);
+    }
     (this.material.uniforms.uMouse.value as THREE.Vector2).copy(this.smoothed);
     this.renderer.render(this.scene, this.camera);
   };

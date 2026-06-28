@@ -73,6 +73,16 @@ button {
 }
 button:disabled { background: #3a4150; color: var(--muted); cursor: not-allowed; }
 
+/* 次要按鈕（快速測試）：弱化樣式，與主要「合成」按鈕區分。 */
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid #3a4150;
+  font-weight: 500;
+}
+button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+.field.sample { gap: 6px; }
+
 /* 無障礙：明確的鍵盤焦點樣式（深色底下清楚可辨） */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -100,11 +110,14 @@ button:disabled { background: #3a4150; color: var(--muted); cursor: not-allowed;
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #viewport { flex: 1; position: relative; }
-#viewport canvas { display: block; }
+/* 兩個檢視器（視差 / mesh）的 canvas 重疊鋪滿視口，由 JS 依模式切換顯隱，
+   避免並列佔位導致第二個 canvas 被擠到框外、尺寸錯誤而一片空白（#2）。 */
+#viewport canvas { display: block; position: absolute; inset: 0; }
 
 /* 3D 視口空狀態引導 */
 .empty-state {
   position: absolute; inset: 0;
+  z-index: 1;   /* 疊在 canvas 之上，切換模式 / 清空後的空狀態才不會被 canvas 背景蓋住 */
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 10px; padding: 24px; text-align: center;
