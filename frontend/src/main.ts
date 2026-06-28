@@ -23,6 +23,7 @@ const parallaxRange = $<HTMLInputElement>("parallax");
 const parOut = $<HTMLOutputElement>("parOut");
 const meshOnly = document.querySelector<HTMLDivElement>(".mesh-only");
 const loadSampleBtn = $<HTMLButtonElement>("loadSample");
+const orbitMode = $<HTMLInputElement>("orbitMode");
 
 // 兩個檢視器並存：預設視差（輕量），mesh 為進階匯出選項。
 const viewport = $<HTMLElement>("viewport");
@@ -94,6 +95,11 @@ document.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((r) =>
   });
 });
 
+// 自由旋轉視角切換（mesh-only）：套用到 mesh 檢視器（若已建立）。
+orbitMode.addEventListener("change", () => {
+  meshViewer?.setOrbitMode(orbitMode.checked);
+});
+
 rgbInput.addEventListener("change", refreshButton);
 depthInput.addEventListener("change", refreshButton);
 
@@ -161,6 +167,7 @@ btn.addEventListener("click", async () => {
         maxPixels: 500_000,
       });
       await meshViewer.loadGlb(result.glb);
+      meshViewer.setOrbitMode(orbitMode.checked);   // 套用目前視角選擇（FB 視差 / 自由旋轉）
       applyViewerVisibility();   // #2：顯示 mesh canvas、隱藏視差 canvas
       emptyState.hidden = true;
       setStatus(
