@@ -29,7 +29,7 @@ from fastapi.responses import StreamingResponse
 
 from src.core.policies import SobelEdgeDetector, DepthDiscontinuityPolicy
 from src.core.geometry import GeometryProcessor
-from src.core.inpainting import TeleaInpainter
+from src.core.inpainting import TeleaInpainter, DepthAwareInpainter
 from src.app.orchestrator import Orchestrator
 
 from backend.rgbd_loader import (
@@ -115,8 +115,9 @@ async def synthesize(
     telea = TeleaInpainter(inpaint_radius=3)
     orch = Orchestrator(
         geo_processor=geo,
-        primary_inpainter=telea,    # MVP：Telea 為主修補器
-        fallback_inpainter=telea,
+        # Phase 4 C1：DIBR depth-aware 為主修補器（只取背景、排前景，純 CPU）。
+        primary_inpainter=DepthAwareInpainter(),
+        fallback_inpainter=telea,   # 降級備案（DepthAware 不會拋 OOM，僅為架構一致保留）
     )
 
     try:
