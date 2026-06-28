@@ -30,6 +30,8 @@ from fastapi.responses import StreamingResponse
 from src.core.policies import SobelEdgeDetector, DepthDiscontinuityPolicy
 from src.core.geometry import GeometryProcessor
 from src.core.inpainting import TeleaInpainter, DepthAwareInpainter
+from src.core.contracts import RGBDFrame
+from src.core.ldi import get_ldi_builder
 from src.app.orchestrator import Orchestrator
 
 from backend.rgbd_loader import (
@@ -149,6 +151,61 @@ def _png_data_url(img_bgr_or_gray: np.ndarray) -> str:
     return f"data:image/png;base64,{b64}"
 
 
+async def _acquire_color_depth(
+    rgb: UploadFile,
+    depth: UploadFile | None,
+    max_pixels: int,
+    depth_convention: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    /parallax 與 /ldi 共用：取得對齊的 (color_bgr uint8, depth_f32 [0,1] 值大=遠)。
+
+    depth 選填：缺少時呼叫可插拔 DepthEstimator（預設未啟用 → 422）。
+    超過 max_pixels 等比例降採樣（與 loader 一致）。
+    """
+    rgb_bytes = await rgb.read()
+    try:
+        color_bgr = decode_image(rgb_bytes, cv2.IMREAD_COLOR)
+    except ValueError as e:
+        raise HTTPException(422, f"RGB 載入失敗：{e}")
+
+    h_rgb, w_rgb = color_bgr.shape[:2]
+
+    if depth is not None:
+        depth_bytes = await depth.read()
+        try:
+            depth_raw = decode_image(
+                depth_bytes, cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE
+            )
+        except ValueError as e:
+            raise HTTPException(422, f"深度載入失敗：{e}")
+        depth_f32 = depth_raw.astype(np.float32)
+        max_val = float(depth_f32.max())
+        if max_val > 1.0:
+            depth_f32 /= max_val
+        depth_f32 = normalize_depth_semantics(depth_f32, depth_convention)
+    else:
+        try:
+            color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
+            depth_f32 = get_depth_estimator().estimate(color_rgb).astype(np.float32)
+        except DepthEstimatorUnavailable as e:
+            raise HTTPException(422, str(e))
+
+    if (depth_f32.shape[0], depth_f32.shape[1]) != (h_rgb, w_rgb):
+        depth_f32 = cv2.resize(
+            depth_f32, (w_rgb, h_rgb), interpolation=cv2.INTER_LINEAR
+        )
+
+    if max_pixels > 0 and (h_rgb * w_rgb) > max_pixels:
+        scale = (max_pixels / (h_rgb * w_rgb)) ** 0.5
+        new_w = max(1, int(w_rgb * scale))
+        new_h = max(1, int(h_rgb * scale))
+        color_bgr = cv2.resize(color_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        depth_f32 = cv2.resize(depth_f32, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+    return color_bgr, depth_f32
+
+
 @app.post("/parallax")
 async def parallax(
     rgb:   UploadFile = File(..., description="RGB 彩色圖（PNG/JPG）"),
@@ -218,4 +275,55 @@ async def parallax(
         "height": out_h,
         "rgb": _png_data_url(color_bgr),
         "depth": _png_data_url(depth_u8),
+    }
+
+
+@app.post("/ldi")
+async def ldi(
+    rgb:   UploadFile = File(..., description="RGB 彩色圖（PNG/JPG）"),
+    depth: UploadFile | None = File(None, description="深度圖（選填；缺少時嘗試自動估算）"),
+    num_layers: int   = Query(2, ge=2, le=3, description="LDI 分層數（2~3）"),
+    max_pixels: int   = Query(2_000_000, ge=0, description="影像像素上限，0=停用限制"),
+    depth_convention: str = Query("auto", description="深度語意：auto|disparity|metric"),
+):
+    """
+    LDI 分層補洞端點：把 RGB-D 沿 depth 斷崖切成 num_layers 層，背景層的
+    disocclusion 破洞**預先 inpaint 填好**，回多層 RGBA+depth 供前端多層 shader
+    做縱深視差（Facebook 3D Photo 式）。**不產生 mesh/.glb**。
+
+    depth 選填：缺少時呼叫可插拔 DepthEstimator（預設未啟用 → 422）。
+    回傳 JSON：{ width, height, num_layers, layers:[{color,depth,alpha,depth_min,depth_max}] }
+      color/depth/alpha 皆為 data:image/png;base64 URL（layer 由近到遠）。
+    """
+    color_bgr, depth_f32 = await _acquire_color_depth(
+        rgb, depth, max_pixels, depth_convention
+    )
+
+    frame = RGBDFrame(color=color_bgr, depth=depth_f32)
+    try:
+        scene = get_ldi_builder().build(frame, num_layers=num_layers)
+    except Exception as e:
+        logger.exception("LDI 分層發生錯誤")
+        raise HTTPException(500, f"LDI 分層失敗：{e}")
+
+    layers_payload = []
+    for layer in scene.layers:
+        depth_u8 = np.clip(layer.depth * 255.0, 0, 255).astype(np.uint8)
+        layers_payload.append({
+            "color": _png_data_url(layer.color),
+            "depth": _png_data_url(depth_u8),
+            "alpha": _png_data_url(layer.alpha),
+            "depth_min": layer.depth_min,
+            "depth_max": layer.depth_max,
+        })
+
+    logger.info(
+        f"LDI 資料完成：{scene.width}×{scene.height}，{scene.num_layers} 層"
+        f"（depth={'上傳' if depth else '估算'}）"
+    )
+    return {
+        "width": scene.width,
+        "height": scene.height,
+        "num_layers": scene.num_layers,
+        "layers": layers_payload,
     }

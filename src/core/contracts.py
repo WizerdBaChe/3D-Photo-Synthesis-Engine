@@ -104,6 +104,57 @@ class MeshData:
 
 
 # ---------------------------------------------------------------------------
+# 輸出資料契約：LDI（Layered Depth Image）分層補洞表示
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LDILayer:
+    """
+    LDI 單一深度層（Facebook 3D Photo 縱深補洞的核心單位）。
+
+    一張場景照沿 depth 斷崖被切成由近到遠數層，每層是一張帶 alpha 的
+    RGBA + depth 圖。前端多層 shader 由遠到近疊加、各層按自身深度做視差
+    位移；前景層滑開時，露出的是「背景層**預先 inpaint 填好**」的內容，
+    從而補掉小角度視差下的 disocclusion 空洞（單層視差填不了真正缺失內容）。
+
+    語意約定（與全專案一致）：
+      - depth ∈ [0,1] float32，值大 = 遠（metric 語意，同 /parallax）。
+      - alpha：uint8，255 = 該層此像素有有效內容，0 = 透空（讓後層透出）。
+        近層在「被自己佔據處」alpha=255、其餘 0；最遠的背景層補洞後 alpha 全 255
+        （作為不透明底，保證任何視差量都不露黑洞）。
+    """
+    color: np.ndarray            # Shape: (H, W, 3), dtype: np.uint8
+    depth: np.ndarray            # Shape: (H, W),    dtype: np.float32，值大=遠
+    alpha: np.ndarray            # Shape: (H, W),    dtype: np.uint8，255=有效
+    depth_min: float             # 本層有效像素的最小深度（近界）
+    depth_max: float             # 本層有效像素的最大深度（遠界）
+
+    def __post_init__(self):
+        if self.color.shape[:2] != self.depth.shape[:2] or \
+           self.color.shape[:2] != self.alpha.shape[:2]:
+            raise ValueError(
+                f"[LDILayer] 維度一致性違反：color={self.color.shape[:2]} "
+                f"depth={self.depth.shape[:2]} alpha={self.alpha.shape[:2]}（H,W 須一致）。"
+            )
+
+
+@dataclass
+class LDIScene:
+    """
+    多層 LDI 場景（LDIBuilder 的輸出契約、/ldi 端點與 .ldi 格式的來源）。
+
+    layers 由「近到遠」排序（index 0 = 最前景，最後一個 = 補好洞的背景底）。
+    """
+    layers: list                 # list[LDILayer]，由近到遠
+    width: int
+    height: int
+
+    @property
+    def num_layers(self) -> int:
+        return len(self.layers)
+
+
+# ---------------------------------------------------------------------------
 # 通訊 Payload 契約
 # ---------------------------------------------------------------------------
 #

@@ -179,3 +179,69 @@ class TestParallax:
             assert r.json()["depth"].startswith("data:image/png;base64,")
         finally:
             set_depth_estimator(NoOpDepthEstimator())
+
+
+class TestLDI:
+    """LDI 分層補洞端點：回多層 RGBA+depth（base64 PNG），不產 mesh。"""
+
+    def test_returns_layers(self, rgb_png, depth_png):
+        r = client.post(
+            "/ldi?num_layers=2",
+            files={
+                "rgb":   ("rgb.png", rgb_png, "image/png"),
+                "depth": ("depth.png", depth_png, "image/png"),
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["width"] == 48 and body["height"] == 48
+        assert body["num_layers"] == len(body["layers"]) >= 2
+        for layer in body["layers"]:
+            assert layer["color"].startswith("data:image/png;base64,")
+            assert layer["depth"].startswith("data:image/png;base64,")
+            assert layer["alpha"].startswith("data:image/png;base64,")
+            assert 0.0 <= layer["depth_min"] <= layer["depth_max"] <= 1.0 + 1e-6
+
+    def test_background_layer_alpha_opaque(self, rgb_png, depth_png):
+        """最遠背景底層 alpha 應全不透明（任何視差量不露黑洞）。"""
+        r = client.post(
+            "/ldi?num_layers=2",
+            files={
+                "rgb":   ("rgb.png", rgb_png, "image/png"),
+                "depth": ("depth.png", depth_png, "image/png"),
+            },
+        )
+        b64 = r.json()["layers"][-1]["alpha"].split(",", 1)[1]
+        raw = np.frombuffer(base64.b64decode(b64), dtype=np.uint8)
+        alpha = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
+        assert alpha.ndim == 2
+        assert int(alpha.min()) == 255, "背景底層應全不透明"
+
+    def test_three_layers(self, rgb_png, depth_png):
+        r = client.post(
+            "/ldi?num_layers=3",
+            files={
+                "rgb":   ("rgb.png", rgb_png, "image/png"),
+                "depth": ("depth.png", depth_png, "image/png"),
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["num_layers"] >= 2
+
+    def test_missing_depth_without_estimator_returns_422(self, rgb_png):
+        """無 depth 且估算器未啟用（預設 NoOp）→ 422（CI 無 torch 也綠）。"""
+        r = client.post(
+            "/ldi",
+            files={"rgb": ("rgb.png", rgb_png, "image/png")},
+        )
+        assert r.status_code == 422
+
+    def test_corrupt_image_returns_422(self):
+        r = client.post(
+            "/ldi",
+            files={
+                "rgb":   ("rgb.png", b"not-an-image", "image/png"),
+                "depth": ("depth.png", b"garbage", "image/png"),
+            },
+        )
+        assert r.status_code == 422
