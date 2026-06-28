@@ -12,7 +12,10 @@
 // depth 約定（與後端一致）：[0,1] 灰階、值大=遠；近度 = (1 - depth)，位移正比近度。
 import * as THREE from "three";
 
-// GLSL 迴圈需編譯期固定上限；後端 num_layers 限 2~3，這裡上限取 3。
+// 後端 num_layers 限 2~3，這裡上限取 3。
+// 重要：WebGL/GLSL ES 對「sampler 陣列以變數索引」「動態迴圈上限」相容性差，
+// 過往以陣列 + 迴圈寫法在部分驅動會編譯失敗 → 整片空白（檢視視窗沒內容）。
+// 故改為**完全展開的具名 uniform**（uColor0/1/2…），直線合成，全 WebGL 版本皆穩。
 const MAX_LAYERS = 3;
 
 const VERT = /* glsl */ `
@@ -23,47 +26,62 @@ const VERT = /* glsl */ `
   }
 `;
 
-// 由遠到近疊加各層；每層按自身 depth 做 UV 位移、用 alpha 合成（near 蓋 far）。
-// 近層位移大、遠層位移小 → 前景滑開時露出已預填的背景層。
+// 由遠到近 over 合成（近層蓋遠層）；每層按自身 depth 做 UV 位移（位移正比近度
+// 1-depth）→ 前景滑開時露出已預填的背景層。各層以 uActiveN 決定是否參與（未用層=0）。
 const FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
-  uniform sampler2D uColor[${MAX_LAYERS}];
-  uniform sampler2D uDepth[${MAX_LAYERS}];
-  uniform sampler2D uAlpha[${MAX_LAYERS}];
-  uniform int   uNumLayers;
+
+  uniform sampler2D uColor0;
+  uniform sampler2D uDepth0;
+  uniform sampler2D uAlpha0;
+  uniform sampler2D uColor1;
+  uniform sampler2D uDepth1;
+  uniform sampler2D uAlpha1;
+  uniform sampler2D uColor2;
+  uniform sampler2D uDepth2;
+  uniform sampler2D uAlpha2;
+  uniform float uActive1;     // 1.0 = 第 1 層有效（layer 數 >= 2）
+  uniform float uActive2;     // 1.0 = 第 2 層有效（layer 數 >= 3）
   uniform vec2  uMouse;
   uniform float uIntensity;
 
-  // 取第 i 層在位移後的取樣（GLSL 不支援以變數索引 sampler 陣列 → 展開）。
-  vec4 sampleLayer(int idx, vec2 uv, out float a) {
-    vec2 off;
-    float d;
-    vec4 c;
-    // idx 對應「由近到遠」：idx=0 最近。位移正比近度 (1-depth)。
-    #define LAYER(I) if (idx == I) { \
-        d = texture2D(uDepth[I], uv).r; \
-        off = uMouse * (1.0 - d) * uIntensity; \
-        vec2 suv = clamp(uv + off, 0.0, 1.0); \
-        c = texture2D(uColor[I], suv); \
-        a = texture2D(uAlpha[I], suv).r; \
-        return c; }
-    LAYER(0)
-    LAYER(1)
-    LAYER(2)
-    a = 0.0;
-    return vec4(0.0);
+  // 對單層取樣：依該層 depth 位移後取色與 alpha。
+  vec3 sampleLayer(sampler2D colTex, sampler2D depTex, sampler2D alpTex,
+                   vec2 uv, out float a) {
+    float d = texture2D(depTex, uv).r;            // 0=近, 1=遠
+    vec2 off = uMouse * (1.0 - d) * uIntensity;   // 近層位移大、遠層小
+    vec2 suv = clamp(uv + off, 0.0, 1.0);
+    a = texture2D(alpTex, suv).r;
+    return texture2D(colTex, suv).rgb;
   }
 
   void main() {
-    // 從最遠層往最近層合成（over 運算：近層蓋遠層）。
+    // 從最遠（layer2，若有）→ 中（layer1，若有）→ 最近（layer0）依序 over 合成。
     vec3 rgb = vec3(0.0);
-    for (int i = ${MAX_LAYERS} - 1; i >= 0; i--) {
-      if (i >= uNumLayers) continue;
-      float a;
-      vec4 c = sampleLayer(i, vUv, a);
-      rgb = mix(rgb, c.rgb, a);
+    float a;
+
+    // 最遠：優先 layer2（3 層時），否則 layer1（2 層時的背景底），否則 layer0。
+    if (uActive2 > 0.5) {
+      rgb = sampleLayer(uColor2, uDepth2, uAlpha2, vUv, a);   // 背景底（alpha 全 1）
+    } else if (uActive1 > 0.5) {
+      rgb = sampleLayer(uColor1, uDepth1, uAlpha1, vUv, a);
+    } else {
+      rgb = sampleLayer(uColor0, uDepth0, uAlpha0, vUv, a);
+      gl_FragColor = vec4(rgb, 1.0);
+      return;
     }
+
+    // 中層（3 層時的 layer1）疊上。
+    if (uActive2 > 0.5 && uActive1 > 0.5) {
+      vec3 c1 = sampleLayer(uColor1, uDepth1, uAlpha1, vUv, a);
+      rgb = mix(rgb, c1, a);
+    }
+
+    // 最近層（layer0）疊上。
+    vec3 c0 = sampleLayer(uColor0, uDepth0, uAlpha0, vUv, a);
+    rgb = mix(rgb, c0, a);
+
     gl_FragColor = vec4(rgb, 1.0);
   }
 `;
@@ -108,16 +126,26 @@ export class LDIViewer {
     this.renderer.domElement.style.display = "none";   // 預設隱藏（視差為預設模式）
     container.appendChild(this.renderer.domElement);
 
-    // 預配置固定長度的 sampler 陣列 uniforms（Three.js 需先給佔位 texture）。
-    const placeholders = Array.from({ length: MAX_LAYERS }, () => null);
+    // 多層 shader 若在某驅動編譯失敗會整片空白（難以察覺）。掛上錯誤回呼，
+    // 把 GLSL 編譯錯誤的 infoLog 丟到 console，便於定位而非靜默空白。
+    this.renderer.debug.onShaderError = (gl, _prog, vs, fs) => {
+      console.error(
+        "[LDIViewer] shader 編譯失敗\nVERTEX:\n",
+        gl.getShaderInfoLog(vs),
+        "\nFRAGMENT:\n",
+        gl.getShaderInfoLog(fs),
+      );
+    };
+
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
       uniforms: {
-        uColor: { value: placeholders.slice() },
-        uDepth: { value: placeholders.slice() },
-        uAlpha: { value: placeholders.slice() },
-        uNumLayers: { value: 0 },
+        uColor0: { value: null }, uDepth0: { value: null }, uAlpha0: { value: null },
+        uColor1: { value: null }, uDepth1: { value: null }, uAlpha1: { value: null },
+        uColor2: { value: null }, uDepth2: { value: null }, uAlpha2: { value: null },
+        uActive1: { value: 0 },
+        uActive2: { value: 0 },
         uMouse: { value: new THREE.Vector2(0, 0) },
         uIntensity: { value: 0.06 },
       },
@@ -147,10 +175,8 @@ export class LDIViewer {
     const n = Math.min(layers.length, MAX_LAYERS);
     const loader = new THREE.TextureLoader();
 
-    const colorTex: (THREE.Texture | null)[] = Array(MAX_LAYERS).fill(null);
-    const depthTex: (THREE.Texture | null)[] = Array(MAX_LAYERS).fill(null);
-    const alphaTex: (THREE.Texture | null)[] = Array(MAX_LAYERS).fill(null);
-
+    // 載入每層三張圖（color/depth/alpha）。
+    const tex: { c: THREE.Texture; d: THREE.Texture; a: THREE.Texture }[] = [];
     for (let i = 0; i < n; i++) {
       const [c, d, a] = await Promise.all([
         loader.loadAsync(layers[i].color),
@@ -160,22 +186,20 @@ export class LDIViewer {
       c.colorSpace = THREE.SRGBColorSpace;
       for (const t of [c, d, a]) {
         t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+        t.needsUpdate = true;
       }
-      colorTex[i] = c;
-      depthTex[i] = d;
-      alphaTex[i] = a;
-    }
-    // 未用的層位以第一層佔位（避免 sampler 為 null 在某些驅動報錯）。
-    for (let i = n; i < MAX_LAYERS; i++) {
-      colorTex[i] = colorTex[0];
-      depthTex[i] = depthTex[0];
-      alphaTex[i] = alphaTex[0];
+      tex.push({ c, d, a });
     }
 
-    this.material.uniforms.uColor.value = colorTex;
-    this.material.uniforms.uDepth.value = depthTex;
-    this.material.uniforms.uAlpha.value = alphaTex;
-    this.material.uniforms.uNumLayers.value = n;
+    const u = this.material.uniforms;
+    // 未用的層位以第一層佔位（避免 sampler 為 null 在某些驅動報錯），
+    // 並用 uActive1/2 關閉其參與合成。
+    const slot = (i: number) => tex[Math.min(i, n - 1)];
+    u.uColor0.value = slot(0).c; u.uDepth0.value = slot(0).d; u.uAlpha0.value = slot(0).a;
+    u.uColor1.value = slot(1).c; u.uDepth1.value = slot(1).d; u.uAlpha1.value = slot(1).a;
+    u.uColor2.value = slot(2).c; u.uDepth2.value = slot(2).d; u.uAlpha2.value = slot(2).a;
+    u.uActive1.value = n >= 2 ? 1 : 0;
+    u.uActive2.value = n >= 3 ? 1 : 0;
 
     if (this.mesh) this.scene.remove(this.mesh);
     const aspect = width / height;
