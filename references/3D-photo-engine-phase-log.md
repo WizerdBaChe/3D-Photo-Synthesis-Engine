@@ -190,3 +190,39 @@
 - mesh 正視角係數（框高 ×0.4）依 near:far≈1:4 估算，實機若仍偏遠調小（0.3）、太貼調大——待使用者定案
 - **空洞根治 = 軌道二**（LDI 多層補繪 或 3DGS）；下一步可起 3DGS spike（本機 GPU）
 - depth_far 預設 4.0（前端 parallax 滑桿），若縱深不足可調大
+
+# Phase Checkpoint
+- Project: 3D Photo Synthesis Engine
+- Phase: Phase 4 軌道二 — LDI 分層補洞引擎（階段 A：端到端跑起來）
+- Status: completed
+- Date: 2026-06-28
+
+## Goals
+- 把「補洞」升級為 **LDI（Layered Depth Image）多層補洞**，根治小角度視差的 disocclusion 空洞
+- 使用者裁示：目標①可重用引擎+規格 / ②端到端可用 / ③低配工具鏈 **全要，順序 2→1→3**；先跑起來
+- 前端 = **新增獨立「LDI 模式」**與視差/mesh 並存（風險隔離、可 A/B 對比）
+
+## Decisions
+- **第一性原理**：FB 3D Photo = 小角度視差，剩餘問題只有 disocclusion 空洞 → LDI 是正解（非 3DGS 換代，見前一 spike no-go checkpoint）
+- **複用 C1**：背景層的遮擋破洞用既有 DepthAwareInpainter（只取背景、排前景）預填 —— 這是 C1 最對的用法；純 CPU、零新依賴
+- **層語意**：layers 由近到遠；最遠背景底層 alpha 全 255（不透明底，任何視差量不露黑洞）；近層位移大、遠層位移小，前景滑開露出預填背景
+- **分層門檻**：用 depth **分位數**切帶（自適應深度尺度、前景小也能單獨成層），非等距切
+- **Provider 模式**：AbstractLDIBuilder + get/set_ldi_builder() 單例（鏡像 depth_estimator），日後可抽換更強分層器，端點/前端不動
+- **接口零破壞**：/synthesize、/parallax 與其 shader 一行不動；新 /ldi 與 _acquire_color_depth helper 為純新增
+
+## Changes
+- src/core/contracts.py: 新增 LDILayer / LDIScene 契約
+- src/core/ldi.py（新）: AbstractLDIBuilder + LDIBuilder（斷崖分層 + 背景層 C1 預填）+ Provider 單例
+- backend/app.py: 新增 POST /ldi（num_layers 2~3）+ 共用 _acquire_color_depth helper
+- frontend/src/ldi.ts（新）: LDIViewer 多層取樣 shader（over 合成、各層自身 depth 位移）
+- frontend/src/api.ts: ldi() + LDIResult/LDILayer 型別
+- frontend/src/main.ts: 模式擴為 parallax|ldi|mesh（延遲建 LDIViewer、合成/可見性/按鈕分支）
+- frontend/index.html: LDI radio + LDI 層數滑桿（ldi-only）
+- tests: test_ldi 單元 12 + /ldi 整合 5；**全套 100 passed**；npm run build typecheck 綠
+- 實機煙霧驗收（samples/RGB_TEST 1344×768）：n=2 背景層 100% 不透明且破洞被合理填補、前景層 alpha 正確切出近景；n=3 三層深度遞增
+
+## Open Questions / TODO
+- **肉眼已驗（後端輸出）**：背景層大洞（整張床）填補偏 smeary（C1 對超大洞的擴散平滑）——小角度視差下多被前景遮住，可接受；改善留階段 B/C（Provider 換更強 inpainter）
+- **待實機前端驗**：三模式切換無互蓋、LDI 拖曳露出預填背景（後端資料已備齊）
+- 分支 feat/ldi-layers（2 commits：core+/ldi、前端 LDI 模式），PR #3 已 merge 進 main，本分支從 main 起
+- **下一步**：開 PR；通過後進階段 B（.ldi 開放格式規格 docs/LDI_FORMAT.md + CLI tools/ldi_cli.py + 文件），再階段 C（可選 Depth-Anything 估深 + Docker + 實測表）
