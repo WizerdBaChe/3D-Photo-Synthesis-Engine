@@ -226,3 +226,32 @@
 - **待實機前端驗**：三模式切換無互蓋、LDI 拖曳露出預填背景（後端資料已備齊）
 - 分支 feat/ldi-layers（2 commits：core+/ldi、前端 LDI 模式），PR #3 已 merge 進 main，本分支從 main 起
 - **下一步**：開 PR；通過後進階段 B（.ldi 開放格式規格 docs/LDI_FORMAT.md + CLI tools/ldi_cli.py + 文件），再階段 C（可選 Depth-Anything 估深 + Docker + 實測表）
+
+# Phase Checkpoint
+- Project: 3D Photo Synthesis Engine
+- Phase: Phase 4 軌道二 — LDI 分層補洞，階段 A — 暫停（肉眼 Gate 未過）
+- Status: in-progress（暫停，待更佳補繪解法後重啟）
+- Date: 2026-06-28
+- Detail: docs/LDI_retrospective.md
+
+## Goals
+- 根治小角度視差 disocclusion 空洞；目標「明顯優於單層視差」
+
+## Decisions
+- 端到端管線可運作、測試 100 passed，但**肉眼品質 Gate 未過** → 依使用者決定暫停
+- **連續逐像素 depth 位移是對的方向**（= 視差模式數學、業界一致）；剛性分層平移=紙板抽離，已棄
+- 三輪症狀與根因見 detail：① shader 編譯失敗整片空白（sampler 陣列/動態迴圈）② 剛性平移=紙板 ③ 連續位移後仍≈視差且有脫影
+- **核心結論**：瓶頸是「背景補繪品質」非 shader/管線。小角度下 disocclusion 僅邊緣細條→LDI 與視差共用同一連續路徑、差異本就小；脫影來自 C1 古典擴散對「超大洞」糊成放射狀條紋（資料問題）。架構天花板＝單圖 depth 位移+補洞只能做小幅變形（學界共識）
+- **唯一真正要換的零件＝補繪器**（LDIBuilder 已 Provider 化注入 inpainter，換 LaMa/diffusion 即可，非重寫）
+
+## Changes
+- src/core/ldi.py（LDIBuilder + Provider）、contracts（LDILayer/LDIScene）、backend /ldi（回 rgb/depth/bg/layers）
+- frontend/src/ldi.ts（連續位移 + 破洞取預填背景 shader）、api.ts ldi()、main.ts 獨立 LDI 模式、parallax/ldi 加 clear()
+- tests：test_ldi 12 + /ldi 整合 5；全套 100 passed；build 綠
+- docs/LDI_retrospective.md（本階段檢討報告）
+
+## Open Questions / TODO
+- 重啟首選 = **路 B：把 LDIBuilder 的 inpainter 換成預訓練 LaMa/輕量 diffusion**（選用安裝、退 C1），投報率最高
+- 次選 = 路 A’（PatchMatch 風格純 CPU 改良大洞補繪）；換代 = 路 C（3DGS，待生態成熟，見前 spike no-go）
+- 判準：評估任何補繪/補洞方案時，直接看它對「整張床」這種**超大洞**的輸出，別只看小 demo
+- 分支 feat/ldi-layers / PR #4 OPEN；保留現狀待重啟
