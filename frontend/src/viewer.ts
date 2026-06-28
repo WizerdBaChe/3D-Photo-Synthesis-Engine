@@ -152,14 +152,15 @@ export class Viewer {
   private frameObject(obj: THREE.Object3D): void {
     const box = new THREE.Box3().setFromObject(obj);
     const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
 
     // mesh 座標系：Z = -Z_cam，故「最靠近觀者的正面」= box 的 max.z。
     const frontZ = box.max.z;
 
-    // 正面（近平面）內容尺寸估算：bbox 的 y 高度是「遠平面」被透視撐大的結果
-    // （預設 near:far=1:4，遠平面約為近平面的 ~4 倍）。要框「正面內容」而非整個視錐，
-    // 故取 bbox 高度的一個比例當作正面框高——係數越小相機越貼、box 輪廓越易溢出視野。
+    // 關鍵（解「攝影機歪」）：原始拍照的光軸就是 X=0, Y=0 這條線
+    //   （反投影 X=(U-cx)Z/fx、Y=-(V-cy)Z/fy，影像中心 U=cx,V=cy → X=Y=0 對所有深度）。
+    //   先前對準 bbox center 之所以歪，是因為視錐近窄遠寬、bbox 質心被遠平面拉偏離光軸。
+    //   要重現 FB「就是原相機那一眼」，相機站位與 lookAt 都必須落在光軸 X=0,Y=0 上、
+    //   視線正對 −Z，畫面才會像視差模式一樣「正」。
     const frontDim = size.y * 0.4;     // 以近平面內容尺度為框高（解「遠看 3D 物件」）
     const fov = (this.camera.fov * Math.PI) / 180;
     this.baseDistance = (frontDim / 2) / Math.tan(fov / 2);
@@ -168,13 +169,12 @@ export class Viewer {
     this.panAmount = frontDim * 0.22;
     this.tiltOffset = frontDim * 0.12;
 
-    // lookAt 目標放在「正面稍微往內」一點（不是整個 box 的幾何中心），
-    // 使視線聚焦於照片主體平面，而非把深遠的後牆也納入構圖中心。
-    this.target.set(center.x, center.y, frontZ - size.z * 0.15);
+    // lookAt 目標：落在光軸上（X=0,Y=0），正對 −Z，往內一小段聚焦主體平面。
+    this.target.set(0, 0, frontZ - size.z * 0.15);
 
-    // 相機站在正面前方 baseDistance 處。
+    // 相機站在光軸上、正面前方 baseDistance 處（X=0,Y=0 → 視線垂直正對，不歪）。
     this.cameraZ = frontZ + this.baseDistance;
-    this.camera.position.set(center.x, center.y, this.cameraZ);
+    this.camera.position.set(0, 0, this.cameraZ);
     this.camera.near = Math.max(this.baseDistance / 100, 0.001);
     this.camera.far = (this.baseDistance + size.z) * 100;
     this.camera.lookAt(this.target);
