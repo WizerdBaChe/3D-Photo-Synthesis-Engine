@@ -1,0 +1,24 @@
+# 3D Photo Synthesis Engine — Web 後端依賴
+# 架構：FastAPI 後端（純 NumPy 計算）+ Vite/Three.js 前端（WebGL 渲染）
+
+# --- 核心計算 ---
+numpy>=1.24.0
+opencv-python>=4.8.0
+
+# --- Web 後端 ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9      # FastAPI 解析 multipart 檔案上傳
+
+# --- 測試 ---
+pytest>=7.4.0
+pytest-timeout>=2.1.0
+httpx>=0.27.0                # fastapi.testclient 所需
+
+# --- LaMa AI 修補（選用，整合時取消註解）---
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# --- 桌面版（已封存於 archive/，僅回溯時需要）---
+# open3d>=0.17.0
+# PySide6>=6.5.0

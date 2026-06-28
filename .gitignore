@@ -1,0 +1,43 @@
+# ============================================================
+#  3D Photo Synthesis Engine — .gitignore
+# ============================================================
+
+# --- 編輯器 / IDE ---
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- 作業系統 ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Python 後端 ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- 前端 (Vite / Node) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.local
+npm-debug.log*
+yarn-error.log*
+
+# --- 已封存的桌面版嵌入式 Python（如需回溯桌面版再重建）---
+archive/python_embeded/
+
+# --- 暫存與產物 ---
+*.zip
+*.glb
+benchmark_report.json
+/scratchpad/
+/debug_out/
