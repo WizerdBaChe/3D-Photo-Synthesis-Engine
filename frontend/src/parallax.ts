@@ -98,6 +98,17 @@ export class ParallaxViewer {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(this.renderer.domElement);
 
+    // shader 編譯失敗時 three.js 會靜默渲染空白（LDI 階段 A 為此耗掉一輪）。
+    // 掛上 onShaderError，讓失敗自己出聲，而不是變成一片空白畫面。
+    this.renderer.debug.onShaderError = (gl, _prog, vs, fs) => {
+      console.error(
+        "[ParallaxViewer] shader 編譯失敗\nVERTEX:\n",
+        gl.getShaderInfoLog(vs),
+        "\nFRAGMENT:\n",
+        gl.getShaderInfoLog(fs),
+      );
+    };
+
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
