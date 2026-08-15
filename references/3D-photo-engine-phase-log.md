@@ -254,4 +254,61 @@
 - 重啟首選 = **路 B：把 LDIBuilder 的 inpainter 換成預訓練 LaMa/輕量 diffusion**（選用安裝、退 C1），投報率最高
 - 次選 = 路 A’（PatchMatch 風格純 CPU 改良大洞補繪）；換代 = 路 C（3DGS，待生態成熟，見前 spike no-go）
 - 判準：評估任何補繪/補洞方案時，直接看它對「整張床」這種**超大洞**的輸出，別只看小 demo
-- 分支 feat/ldi-layers / PR #4 OPEN；保留現狀待重啟
+- ~~分支 feat/ldi-layers / PR #4 OPEN；保留現狀待重啟~~
+  **已被事實取代（2026-08-16 結案回顧更正）**：PR #4 於 2026-06-28T11:55Z **已 merge**
+  （`gh pr list` 確認 PR #1–#4 全部 MERGED；main = c4ce60d 即 PR #4 的 merge commit）。
+  分支 `feat/ldi-layers` 目前只有 1 個未進 main 的 commit（3b9df1f，搬 docs 到 archive/）。
+  **這筆過期紀錄的代價**：任何接手 session 讀到的是「有一個待審的 PR、有一條要保留的分支」，
+  會去重審一個已合併的 PR，並誤以為 LDI 程式碼還沒進 main。
+
+
+# Phase Checkpoint — 專案結案（CLOSING）
+- Project: 3D Photo Synthesis Engine (Web v2.0)
+- Phase: 結案 — 視差模式交付、LDI/mesh 停在架構天花板
+- Status: **closed**
+- Date: 2026-08-16
+- Detail: `~/.claude/outputs/retrospectives/retrospective-3D-photo-engine-2026-08-16.md`
+
+> 本段由 `project-retrospective` 寫入。上面 6 段 checkpoint 全部保持原文不動，
+> 只有已被事實推翻的那一行加了可見的更正（見上一段）。
+
+## 結案狀態
+
+- **交付且驗收通過的**：視差模式（`/parallax` + `ParallaxViewer`）—— 使用者實機評語
+  「相當成功，路線正確」。這是專案唯一達成原始體驗目標的路徑。
+- **交付但未過肉眼 Gate 的**：LDI 分層補洞（`/ldi` + `LDIViewer`）。管線可運作、測試全綠，
+  但畫面與視差模式差異不足且有脫影 → 使用者裁定暫停，本次結案時轉為**不再重啟**。
+- **保留為進階選項的**：mesh / `.glb` 匯出（`/synthesize` + `viewer.ts`）。
+- **測試**：pytest 100 passed（2026-08-16 重跑確認）；`npm run build` 綠。
+- **git**：PR #1–#4 全部 merged；`main` = c4ce60d。結案 commit 落在 `feat/ldi-layers`。
+
+## 開放項目對帳（Step 3 reconciliation）
+
+### 仍然開放（結案時未解，且不再處理）
+- 超大洞（整張床）補繪品質：C1 古典擴散糊成放射狀條紋。**這是全案的根因瓶頸**。
+- `max_edge_ratio=30` 只在單一房間圖上校準過，其他 depth 尺度/構圖未驗證。
+- depth `auto` 啟發式門檻（`high_frac 0.35`、`skew>0`）同樣只有少量樣本。
+- Step 4「near/far → 視差強度語意收斂」從 Phase 1 延到結案，從未做。
+- 自動估深仍是 `NoOpDepthEstimator`，未接任何模型。
+- 前端無單元測試框架，`parallax.ts` / `ldi.ts` / `viewer.ts` 只有 `tsc` + `vite build` 把關。
+- mesh 正視角框距係數（bbox 高 ×0.4）待實機定案 —— 因 mesh 降為進階選項而失去優先權。
+- LDI 階段 B（`.ldi` 格式規格 + CLI）與階段 C（Depth-Anything + Docker + 實測表）從未開始。
+
+### 已關閉（先前列為開放，紀錄沒跟上）
+- 側面大角度放射狀線條 —— 關閉依據：Phase 2 的 3D 邊長剔除（`_cull_long_edge_faces`，
+  max/median 576.9× → 30×），其後 Phase 3 把 mesh 降為非預設，此問題不再位於主路徑。
+- 前端受限視差相機（原 Step 2）—— 關閉依據：Phase 2 移除 OrbitControls 改滑鼠驅動，
+  Phase 3/4 再改為拖曳驅動。
+- mesh 模式疊第二 canvas 需互斥 —— 關閉依據：Phase 4 軌道一的
+  `setVisible()` / `applyViewerVisibility()` / `resetViewport()`。
+- PR #1 / #2 / #3 待 merge —— 關閉依據：全部 merged（2026-06-28）。
+- 3DGS 換代可行性 —— 關閉依據：spike 結論 no-go（8GB Blackwell sm_120 + 授權 + 生態）。
+- 「待實機前端驗」的 LDI 三模式切換與預填背景 —— 關閉依據：使用者實機看過，
+  **判定不合格**（這是關閉，不是通過）。
+
+## 本次結案動到的東西
+- 修 3 個現存缺陷：`parallax.ts` 補 `onShaderError`、`AGENTS.md` 改為受版控的指標檔、
+  刪 `docs/` 下 4 個搬檔後留下的空目錄。
+- 更新 `README.md` / `DEV_README.md`（兩者都停在 mesh 路線）。
+- 更正本檔與 `docs/LDI_retrospective.md` 的 PR #4 狀態。
+- 產出 Document 1 / Document 2 / 全域規則候選表（路徑見專案 `CLAUDE.md` 頂端指標）。

@@ -4,6 +4,7 @@
 - 階段：Phase 4 軌道二 — LDI（Layered Depth Image）分層補洞，階段 A（端到端）
 - 結論：**端到端管線可運作、測試全綠，但「肉眼品質 Gate」未過**；依使用者決定**暫停**，
   保留分支 `feat/ldi-layers` / PR #4，待尋得更佳解法後再重啟。
+  （**2026-08-16 更正**：PR #4 其後已 merge；且專案已於 2026-08-16 結案，不再重啟 —— 見 §8。）
 - 日期：2026-06-28
 
 ---
@@ -71,6 +72,8 @@
 
 ## 8. 交付狀態
 
-- 分支 `feat/ldi-layers`、PR #4（OPEN）。commits：core+/ldi、前端模式、phase-log、shader 修正×2。
+- ~~分支 `feat/ldi-layers`、PR #4（OPEN）。~~ **更正（2026-08-16 結案回顧）：PR #4 已於
+  2026-06-28T11:55Z merge 進 main（c4ce60d）。** 寫下本行時它確實還開著；停在這個狀態，
+  會讓接手者以為 LDI 程式碼尚未進主線。commits：core+/ldi、前端模式、phase-log、shader 修正×2。
 - 測試 100 passed、build 綠。`spike/` 仍未進主線（3DGS 隔離骨架）。
 - 本報告 = 收尾文件；對應 phase-log checkpoint「LDI 階段 A — 暫停」。
