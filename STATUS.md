@@ -25,15 +25,20 @@ highest-priority record of current state. Two obligations, both non-optional:
 |---|---|
 | **Project status** | **CLOSED 2026-08-16.** Do not propose or start feature work. |
 | **Verdict** | Failure-leaning. The parallax viewer shipped, but it is the industry baseline reimplemented; the one problem the project existed to solve — disocclusion holes — was never solved, and the close-out concluded it was **unsolvable under the stated constraints**. |
-| **Last landed** | **PR #8** — this file. PR #1–#8 all merged; no open PRs. |
+| **Current as of** | **PR #10.** Verify in one line: `gh pr list --state merged --limit 1` — if it shows a **higher** number, this file was not updated with that change. Treat the whole file as suspect, check it against the repo, and fix it. |
 | **Branches** | `main` only, local and remote. |
 | **Working tree** | Clean. **3.0 MB**, 95 tracked files (of which `.git` is 1.5 MB). |
 
 > The `main` tip SHA is deliberately **not** recorded here. A merge commit's SHA
 > cannot be known until after the merge, so any tip written into this file is
 > stale the moment it lands — a field guaranteed to rot is worse than no field.
-> Record the **PR number** (knowable before merging) and read the tip live:
-> `git log --oneline -1`.
+> A **PR number is knowable before merging**, which is why "current as of" uses
+> one: the PR that carries a change writes its own number into that row. Read the
+> tip live with `git log --oneline -1` when you need it.
+>
+> The point of the verify command above is not that this file never goes stale —
+> it will, the first time someone forgets. The point is that going stale becomes
+> **detectable in one command** instead of invisible.
 | **Runnable right now?** | **No.** `.venv/` and `frontend/node_modules/` were deleted in the 2026-08-16 cleanup. Run `.\engine.bat install` first. |
 
 ### What shipped and works
@@ -141,8 +146,15 @@ install**. Treat them as dated evidence, not as a live status light.
 3. Follow `CLAUDE.md`'s rules — they are conditional, each fires only in its own
    situation.
 4. Feature branch + PR + Conventional Commits; **the user decides the merge.**
-5. Before you call it done: update §1, §2 and §5 of this file if they changed,
-   and add a changelog row below. Then commit that in the same PR — not later.
+5. Before you call it done, in the **same PR**, not later:
+   - set §1's **"current as of"** row to **your own PR's number** (you know it
+     before you merge — that is the whole reason the field is a PR number and
+     not a commit SHA);
+   - update §1, §2 and §5 if what they describe changed;
+   - add a changelog row in §7.
+
+   Skipping the first bullet is how this file goes stale. PR #9 skipped it and
+   left the row reading #8; that is what §1's verify command is there to catch.
 
 ---
 
@@ -153,7 +165,8 @@ commit message and the documents in §3.
 
 | Date | PR | What changed |
 |---|---|---|
-| 2026-08-16 | #9 | Dropped the `main`-tip field from §1 — it was stale the instant PR #8 merged, which is what a self-invalidating field does. Replaced with the last-landed PR number. Added this row and the #8 row, which #8 could not contain. |
+| 2026-08-16 | #10 | Made staleness **detectable**: §1's row is now "current as of \<this PR's number\>" with a one-line verify command, and §6 step 5 makes writing that number a required part of every PR. #9 had left the row reading #8 — the same failure one level up, caught by the same method. |
+| 2026-08-16 | #9 | Dropped the `main`-tip field from §1 — it was stale the instant PR #8 merged, which is what a self-invalidating field does. Replaced with a PR number. Added this row and the #8 row, which #8 could not contain. |
 | 2026-08-16 | #8 | **This file created**, plus the pointers that make it work: `CLAUDE.md` and `AGENTS.md` now open with read-first / update-last, `README` and `DEV_README` carry human pointers. |
 | 2026-08-16 | #7 | Post-close-out cleanup: 348 MB → 3.0 MB. `.venv`, `node_modules`, the 49 MB 3DGS residue and all regenerable caches deleted; three records the deletion would have falsified were corrected in the same commit. |
 | 2026-08-16 | #6 | Rescued the 3DGS spike records off `spike/phase4-3dgs` (two phase-log checkpoints, `future_improvements.md` §三, the spike harness) before deleting that branch. They had no remote copy and the phase log already cited them. |
