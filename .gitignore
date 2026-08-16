@@ -35,6 +35,12 @@ yarn-error.log*
 # --- 已封存的桌面版嵌入式 Python（如需回溯桌面版再重建）---
 archive/python_embeded/
 
+# --- Spike / 實驗性探索（已結論不採用）---
+spike/
+
+# --- Claude Code 工具產物 ---
+.claude/scheduled_tasks.lock
+
 # --- 暫存與產物 ---
 *.zip
 *.glb
