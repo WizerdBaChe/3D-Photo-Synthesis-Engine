@@ -1,5 +1,13 @@
 # CLAUDE.md — 3D Photo Synthesis Engine (Web v2.0)
 
+> # ⛔ READ [`STATUS.md`](STATUS.md) FIRST — AND UPDATE IT BEFORE YOU FINISH.
+> `STATUS.md` is this repo's highest-priority record: what is true *today*, what
+> is unverified, and what will bite you. This file tells you the RULES;
+> `STATUS.md` tells you the STATE. **Any change to this repo is unfinished until
+> `STATUS.md` reflects it and its changelog has a new row — in the same PR, not
+> later.** A stale `STATUS.md` is worse than none, because everything downstream
+> trusts it.
+
 > **Retrospective (project close-out, 2026-08-16):**
 > `~/.claude/outputs/retrospectives/retrospective-3D-photo-engine-2026-08-16.md` (full guide) ·
 > `~/.claude/outputs/retrospectives/claude-instructions-3D-photo-engine.md` (rule source of this file) ·

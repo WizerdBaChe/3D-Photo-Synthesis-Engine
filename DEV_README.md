@@ -1,7 +1,9 @@
 # 開發者與維護者指南 (DEV_README)
 
 **版本：** Web v2.0 · **架構：** FastAPI 後端 + Vite/TS/Three.js 前端
-**專案狀態：** 已結案 2026-08-16（見 [CLAUDE.md](CLAUDE.md) 頂端；不再新增功能）
+**專案狀態：** 已結案 2026-08-16，不再新增功能。
+**動手前先看 [STATUS.md](STATUS.md)** —— 它是現況的唯一權威來源（`.venv` 與
+`node_modules` 已於 2026-08-16 清理刪除，本檔的所有指令都要先 `engine.bat install`）。
 
 > 使用者導向的說明請見 [README.md](README.md)。本檔為架構、API、測試、擴充與部署的工程文件。
 

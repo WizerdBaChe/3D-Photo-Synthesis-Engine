@@ -1,6 +1,9 @@
 # AGENTS.md — 3D Photo Synthesis Engine (Web v2.0)
 
-**The rules for this repository live in [CLAUDE.md](CLAUDE.md). Read that file.**
+**Read [STATUS.md](STATUS.md) first — it is this repo's highest-priority record
+of current state, and you must update it before you finish any change.**
+
+**The rules for this repository live in [CLAUDE.md](CLAUDE.md). Read that next.**
 
 This is a pointer, not a copy. An agent-instruction file that duplicates another
 one decays silently: the two drift, and nothing reports it. One extra read is
