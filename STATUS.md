@@ -25,9 +25,15 @@ highest-priority record of current state. Two obligations, both non-optional:
 |---|---|
 | **Project status** | **CLOSED 2026-08-16.** Do not propose or start feature work. |
 | **Verdict** | Failure-leaning. The parallax viewer shipped, but it is the industry baseline reimplemented; the one problem the project existed to solve — disocclusion holes — was never solved, and the close-out concluded it was **unsolvable under the stated constraints**. |
-| **`main` tip** | `cf3cb7a` (merge of PR #7) |
-| **Branches** | `main` only, local and remote. No open PRs. PR #1–#7 all merged. |
+| **Last landed** | **PR #8** — this file. PR #1–#8 all merged; no open PRs. |
+| **Branches** | `main` only, local and remote. |
 | **Working tree** | Clean. **3.0 MB**, 95 tracked files (of which `.git` is 1.5 MB). |
+
+> The `main` tip SHA is deliberately **not** recorded here. A merge commit's SHA
+> cannot be known until after the merge, so any tip written into this file is
+> stale the moment it lands — a field guaranteed to rot is worse than no field.
+> Record the **PR number** (knowable before merging) and read the tip live:
+> `git log --oneline -1`.
 | **Runnable right now?** | **No.** `.venv/` and `frontend/node_modules/` were deleted in the 2026-08-16 cleanup. Run `.\engine.bat install` first. |
 
 ### What shipped and works
@@ -145,9 +151,11 @@ install**. Treat them as dated evidence, not as a live status light.
 Newest first. One row per landed change. Keep it short; detail belongs in the
 commit message and the documents in §3.
 
-| Date | `main` tip | What changed |
+| Date | PR | What changed |
 |---|---|---|
-| 2026-08-16 | `cf3cb7a` | **This file created.** Post-close-out working-tree cleanup: 348 MB → 3.0 MB (PR #7). `.venv`, `node_modules`, the 49 MB 3DGS residue and all regenerable caches deleted; three records that the deletion would have falsified were corrected in the same commit. |
-| 2026-08-16 | `0fee9cc` | PR #6 — rescued the 3DGS spike records off `spike/phase4-3dgs` (two phase-log checkpoints, `future_improvements.md` §三, and the spike harness) before deleting that branch. Those records had no remote copy and the phase log already cited them. |
-| 2026-08-16 | `c14a446` | PR #5 — **project close-out.** Retrospective rules merged into `CLAUDE.md`; `parallax.ts` got `onShaderError`; `AGENTS.md` became a pointer; `README`/`DEV_README` refreshed; the "PR #4 OPEN" claim corrected in two records; closing checkpoint appended to the phase log. |
-| 2026-06-28 | `c4ce60d` | PR #4 — LDI layered hole-fill, stage A. Merged, then paused: the by-eye gate failed. |
+| 2026-08-16 | #9 | Dropped the `main`-tip field from §1 — it was stale the instant PR #8 merged, which is what a self-invalidating field does. Replaced with the last-landed PR number. Added this row and the #8 row, which #8 could not contain. |
+| 2026-08-16 | #8 | **This file created**, plus the pointers that make it work: `CLAUDE.md` and `AGENTS.md` now open with read-first / update-last, `README` and `DEV_README` carry human pointers. |
+| 2026-08-16 | #7 | Post-close-out cleanup: 348 MB → 3.0 MB. `.venv`, `node_modules`, the 49 MB 3DGS residue and all regenerable caches deleted; three records the deletion would have falsified were corrected in the same commit. |
+| 2026-08-16 | #6 | Rescued the 3DGS spike records off `spike/phase4-3dgs` (two phase-log checkpoints, `future_improvements.md` §三, the spike harness) before deleting that branch. They had no remote copy and the phase log already cited them. |
+| 2026-08-16 | #5 | **Project close-out.** Retrospective rules merged into `CLAUDE.md`; `parallax.ts` got `onShaderError`; `AGENTS.md` became a pointer; `README`/`DEV_README` refreshed; the "PR #4 OPEN" claim corrected in two records; closing checkpoint appended to the phase log. |
+| 2026-06-28 | #4 | LDI layered hole-fill, stage A. Merged, then paused: the by-eye gate failed. |
