@@ -191,6 +191,71 @@
 - **空洞根治 = 軌道二**（LDI 多層補繪 或 3DGS）；下一步可起 3DGS spike（本機 GPU）
 - depth_far 預設 4.0（前端 parallax 滑桿），若縱深不足可調大
 
+> 以下兩段由 2026-08-16 的結案善後從 `spike/phase4-3dgs` 分支救回。
+> 它們原本只存在於那條**從未合併、且沒有遠端副本**的本地分支上，
+> 而本檔下方多處（「見前一 spike no-go checkpoint」）一直在引用它們。
+
+# Phase Checkpoint
+- Project: 3D-Photo-Synthesis-Engine
+- Phase: Phase 4 軌道二 — 3DGS Spike（單圖→場景級 3DGS）調研結論
+- Status: completed（spike 收斂為「3DGS 暫不換代」，改採 LDI 方向）
+- Date: 2026-06-28
+
+## Goals
+- 本機 GPU 實跑「單圖→場景級 3D Gaussian Splatting」，量品質/延遲/VRAM/安裝可行性，產 go/no-go
+- 並找可商用（MIT/Apache）的場景級替代（最終產品或需商用授權）
+
+## Decisions（spike 調研結論 = 暫不換代 3DGS）
+- **第一性原理校正（關鍵）**：本專案首要目標 = Facebook 3D Photo 檢視感 = 平面+depth 位移、**小角度視差**（非自由 orbit 3D）。剩餘問題只是小角度下露出的 **disocclusion 空洞**，不是要做完整自由視角 3D 重建。→ 重型 3DGS 換代對此目標是**過度工程**
+- **本機硬體**：RTX 5070 Laptop、**8GB VRAM**、sm_120(Blackwell)、driver 610.47；已裝 CUDA Toolkit 12.8+13.0、nvcc 13.0。torch 未裝（sm_120 須 cu128/nightly，穩定輪不支援）
+- **候選全面評估（2026-06 現況）**：
+  - **Flash3D**（場景級、CC BY-NC 非商用）：官方+fork HF Space **皆掛**（numpy/torch 依賴腐爛）；本機裝又與 Blackwell 相犯（pin torch2.2.2 + xformers0.0.25 + 需現場編譯的 diff-gaussian-rasterization CUDA 擴充 + UniDepth）→ 安裝高風險
+  - **NVIDIA Lyra 2.0**：base = Wan2.1-**14B**、為 H100/GB200 設計 → **8GB 跑不動**；code Apache 但**權重另採限制性授權**（非乾淨商用）
+  - **FlashWorld**（2025-10，更新）：**未釋出 code/權重**
+  - **CompleteSplat**（Niantic，單圖→含遮擋的完整 splat，最貼合需求）：授權 **CC-BY-SA 4.0**、code 釋出狀態未明
+  - **AnySplat**（MIT 可商用、HF 權重、torch 彈性）：唯一平衡者，但範例為**多視圖**、單圖支援未明
+  - SplatterImage/pixelSplat：torch1.13 老舊或需多圖
+  - **結論**：2026-06、本機 8GB Blackwell 上「單圖→場景級 3DGS」尚不成熟——輕量法依賴腐爛、高品質法 datacenter 級或未釋出/非商用。**no-go（暫）**
+- **改採方向 = LDI（Layered Depth Image）**：才是 FB-3D-Photo 小角度視差的對症解（見記憶 fb-3d-photo-is-not-mesh）。現行 `frontend/src/parallax.ts` FRAG 的 B 段（取樣命中前景→沿 offset 反向退步找背景）已是**單層 in-shader DIBR 近似**，但只能改取既有鄰近背景、**填不了真正缺失（從未拍到）的內容**。LDI = 沿 depth 斷崖切層 + **預先 inpaint 背景層**，讓 shader 後備有「真填好的背景」可取 → 純 CPU/既有架構可做，無需 torch/14B/CUDA 擴充
+
+## Changes
+- `spike/3dgs/`（隔離工作區，已建）：`.gitignore`（權重/輸出/venv 全排除）、`check_env.py`（gate① torch sm_120 檢查）、`run_flash3d.py`（Flash3D 單圖→.ply CLI，已對齊 cloned repo 真實模組 models.model.GaussianPredictor / misc.visualise_3d.save_ply）、`README.md`（硬體+候選+實測表）
+- 未產生任何 .ply：torch cu128 背景安裝**卡住**（網路可達但傳輸停滯，exit 255 已中止）；Flash3D demo 全掛，未到實跑
+- 主線、requirements.txt、既有端點/前端**零改動**
+
+## Verification
+- 既有 pytest 83 passed、frontend build 綠（spike 前驗，未動主線故仍有效）
+- spike 隔離原則守住：主 .venv 無 torch、requirements 未動
+
+## Open Questions / TODO
+- **下一步（建議）= 軌道二改實作 LDI**：沿 depth 斷崖分 2–3 層、背景層用既有 inpainting（C1 DepthAwareInpainter 思路）預填，前端 shader 改多層取樣（前景移開露預填背景層）。純 CPU、契合既有 Orchestrator/inpainter 接口
+- 3DGS 列為「**生態成熟再回頭**」：待出現 MIT/Apache + 單圖場景 + ≤8GB + cu128 友善的方案（AnySplat 單圖支援值得再追、CompleteSplat code 若釋出再評）
+- spike 程式碼保留於 `spike/3dgs/`（gitignore 重物），未來回試 3DGS 可直接沿用 check_env / run_* 骨架
+- PR #3（前端 viewer/UX）仍 OPEN 待 merge（本回合因未經明確同意未自動 merge agent PR）；spike 分支 `spike/phase4-3dgs` 由其開出
+
+# Phase Checkpoint
+- Project: 3D-Photo-Synthesis-Engine
+- Phase: Phase 4 軌道二 — 「自建/訓練模型補空洞」可行性評估
+- Status: completed（評估定案：做路 A LDI，路 B 選用整合現成權重，不碰路 C 自訓）
+- Date: 2026-06-28
+
+## Goals
+- spike 帶來的啟發：既然前端接口已備好，能否「自己訓模型 / 自建較低效能但可用架構」補上 disocclusion 空洞缺口？誠實評估是否成立
+
+## Decisions（三路評估）
+- **路 A（推薦、不訓練模型、成立）= LDI 多層 + 古典補繪**：沿 depth 斷崖切 2–3 層，背景層用既有 C1 `DepthAwareInpainter`（DIBR）預填，前端 shader 多層取樣。純 CPU、契合 `AbstractInpainter` 接口與 `/parallax`。是 FB 3D Photo 原架構（LDI）的對症實作，非妥協。本週可落地
+- **路 B（選用品質升級、成立但「整合現成權重」優於「自訓」）**：大洞品質不足時，接現成預訓練 inpainting 權重（LaMa，MIT 類、CPU 可跑）補背景層，沿用 `LaMaInpainter._load_model()/_run_inference()` 佔位即可。**不建議從零訓練**——瓶頸是資料（需大量 RGB/depth/遮罩/GT背景 配對）非算力，品質大概率仍輸現成權重，投報率差
+- **路 C（不成立）= 自訓單圖→場景 3DGS**：8GB 訓不動（H100×64/14B 級），明確排除
+- **結論**：野心落在路 A，路 B 作選用,不碰路 C
+
+## Changes
+- `future_improvements.md`: 新增「三、Phase 4 軌道二 disocclusion 補繪」段（第 14/15/16 項，對應路 A/B/C）
+
+## Open Questions / TODO
+- **下一步 = 實作路 A LDI 多層**：分層模組（斷崖切層）+ 背景層 inpaint（複用 C1）+ `/parallax` 回多層 + 前端 shader 多層取樣
+- 路 B 待路 A 驗收後視大洞品質再決定是否接 LaMa
+- PR #3 仍待 merge；LDI 實作建議從 main（merge 後）開新分支
+
 # Phase Checkpoint
 - Project: 3D Photo Synthesis Engine
 - Phase: Phase 4 軌道二 — LDI 分層補洞引擎（階段 A：端到端跑起來）
