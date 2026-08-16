@@ -30,12 +30,15 @@ no-go 的依據是**安裝可行性與授權**，不是實測品質——重啟�
 關鍵硬體事實（2026-06 本機）：RTX 5070 Laptop、**8 GiB VRAM**、
 **sm_120 (Blackwell)**、driver 610.47。sm_120 在 PyTorch 穩定輪不支援，必須 cu128 或 nightly。
 
-## 大體積殘留物
+## 大體積殘留物 —— 已於 2026-08-16 刪除（使用者裁定）
 
-`archive/spike-3dgs-residue/` 放的是同一次 spike 留下的 49 MB：
+同一次 spike 留下 49 MB，**已刪除**，兩者都可重建，沒有損失無法重建的東西：
 
-- `flash3d/`（37 MB）：`https://github.com/eldar/flash3d.git` 的 clone，**可重新 clone**。
-- `.venv-3dgs/`（13 MB）：隔離虛擬環境，內含絕對路徑，**已無法使用**。
+| 原路徑 | 大小 | 怎麼拿回來 |
+|---|---|---|
+| `spike/3dgs/flash3d/` | 37 MB | `git clone https://github.com/eldar/flash3d.git` |
+| `spike/3dgs/.venv-3dgs/` | 13 MB | 依本資料夾 `README.md`〈安裝（隔離 venv）〉一節重建（cu128 wheel） |
 
-兩者都**不進版控**（見根 `.gitignore`）。依「不刪檔、搬進 archive/」的慣例保留；
-需要磁碟空間時可以直接刪掉整個 `archive/spike-3dgs-residue/`，不會損失任何無法重建的東西。
+刪除紀錄見 `archive/2026-08-16-cleanup/CLEANUP-REPORT.md`。
+**注意**：`README.md` 裡的安裝步驟寫的是 2026-06 當時的 wheel/相容性狀況；
+真要重跑 3DGS，先重新確認 sm_120 在當時的 PyTorch 穩定輪是否已被支援。

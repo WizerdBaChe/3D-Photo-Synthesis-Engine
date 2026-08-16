@@ -37,9 +37,8 @@ archive/python_embeded/
 
 # --- Spike / 實驗性探索（已結論不採用）---
 # spike/ 於 2026-08-16 結案善後清空：工具鏈已存入 archive/spike-3dgs/（進版控），
-# 49 MB 的 clone 與 venv 搬到 archive/spike-3dgs-residue/（不進版控，見下）。
+# 49 MB 的 clone 與 venv 已刪除（可重建，還原指令見該資料夾的 ARCHIVE-NOTE.md）。
 spike/
-archive/spike-3dgs-residue/
 
 # --- Claude Code 工具產物 ---
 .claude/scheduled_tasks.lock
