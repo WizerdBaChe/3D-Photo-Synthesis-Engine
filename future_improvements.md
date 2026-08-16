@@ -167,3 +167,35 @@ class LoadImagePayload:
 **建議方向：**
 
 在不改變任何模組邏輯的前提下，於 `main.py` 的 `logging.basicConfig()` 替換為結構化 JSON handler（例如使用 `python-json-logger`），讓每一條 log 輸出包含 `module`、`event`、`elapsed_ms` 等固定欄位。各模組的 `logger.info()` 調用保持不動，只需在進入點切換 formatter，改動範圍極小。
+
+---
+
+## 三、Phase 4 軌道二 — disocclusion 空洞補繪（Web v2.0）
+
+> 背景：C1（`DepthAwareInpainter`）只防斷崖接縫滲前景，補不了小角度視差露出的 disocclusion 空洞。
+> 2026-06 對「單圖→場景級 3DGS 換代」做 spike，結論 no-go（見 phase-log spike 段與記憶 3dgs-spike-nogo-use-ldi）。
+> 「自建/訓練模型補空洞」是否成立的評估如下，分三路。
+
+### 14. 路 A（推薦、不訓練模型）：LDI 多層 + 古典補繪
+
+**現狀：** 前端 `frontend/src/parallax.ts` FRAG 的 B 段已是「單層 in-shader DIBR 近似」——取樣命中前景時沿位移反向退步找背景，但只能改取**既有**鄰近背景，填不了真正缺失（從未拍到）的內容。`/parallax` 端點目前只回 RGB + 單張 depth。
+
+**建議方向（成立、本週可落地）：**
+
+沿 depth 斷崖把場景切 2–3 層（前景 / 中景 / 背景），對被前景遮住的背景層，用**既有 C1 `DepthAwareInpainter` 的 DIBR 背景擴散**預先填補（純 CPU、零 GPU），產出「補好的背景層 RGBA + depth」。`/parallax` 端點擴充為回傳多層貼圖；前端 shader 改多層取樣——前景隨視差移開時，露出的是**預填好的背景層**而非破洞。
+
+契合既有接口：背景層補繪直接複用 `AbstractInpainter.fill()`（[src/core/inpainting.py](src/core/inpainting.py)）；分層邏輯可作為 `GeometryProcessor` 旁的新模組或 Orchestrator 前處理。這不是「較低效能但可用」的妥協，而是 **Facebook 3D Photo 原本架構（LDI）的對症實作**。
+
+### 15. 路 B（品質升級、選用）：整合現成 inpainting 權重當背景層補繪器
+
+**現狀：** `LaMaInpainter` 佔位接口（`fill()` 拋 `NotImplementedError`）+ `VRAMExhaustedError` 降級鏈早已就緒（見第 2、7 項）。
+
+**建議方向（成立但「整合現成權重」優於「從零訓練」）：**
+
+若路 A 的古典補繪在大洞品質不足，**接一個現成的預訓練 inpainting 權重**（如 LaMa，MIT 類授權、CPU 可跑）補背景層，沿用 `LaMaInpainter._load_model()/_run_inference()` 兩個待補方法即可，架構不動。
+
+**關鍵判斷：不建議「自己從零訓練模型」**——真正的瓶頸不是 8GB 算力，而是資料：要訓出能「畫出合理背景」的模型，需大量 (RGB, depth, 遮罩, ground-truth 背景) 配對（自合成或租 RealEstate10K 等，授權/成本高），且品質大概率仍輸給直接拿現成權重。投報率差。
+
+### 16. 路 C（不成立）：自訓單圖→場景 3DGS / 生成式 3D
+
+8GB 單卡訓不動（該領域是 H100×64、14B 參數級），資料與算力差數個數量級。明確排除。**結論：把野心落在路 A（實作 LDI），路 B 作為選用品質升級，不碰路 C。**

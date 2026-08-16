@@ -1,0 +1,14 @@
+# 3DGS spike：重依賴/權重/輸出/虛擬環境一律不進 git。
+# 只有程式碼（check_env.py / run_*.py / README.md）會被追蹤。
+.venv-3dgs/
+weights/
+out/
+flash3d/
+lyra/
+*.ply
+*.splat
+*.ckpt
+*.pth
+*.safetensors
+__pycache__/
+*.pyc

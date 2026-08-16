@@ -13,5 +13,7 @@
 | `docs/重製注意事項.md` | 桌面→Web 遷移的修正清單，所有項目已完成（2026-06-23）|
 | `docs/前端UX檢視報告.md` | 一次性 UX 審查報告（2026-06-23），已供參考使用完畢 |
 | `docs/專案架構設計與系統工程總結轉交文件.md` | 桌面版架構總結交接文件，Web 版後已失效 |
+| `spike-3dgs/` | 3DGS spike 的工具鏈（README / check_env.py / run_flash3d.py）。結論 no-go；**原本只存在於未合併且無遠端副本的 `spike/phase4-3dgs` 分支上**，2026-08-16 刪分支前搬來。**進版控**，說明見 `spike-3dgs/ARCHIVE-NOTE.md` |
+| `spike-3dgs-residue/` | 同一次 spike 的 49 MB 殘留：`flash3d/`（可重新 clone）與 `.venv-3dgs/`（含絕對路徑，已失效）。**不進版控**（根 `.gitignore`）；需要空間時可整個刪除，不損失無法重建的東西 |
 
-`spike/` 目錄（3DGS/Flash3D 探索）已加入 `.gitignore`，不進入版本控制。
+`spike/` 目錄已於 2026-08-16 清空並移入本資料夾；根 `.gitignore` 仍保留該規則。
